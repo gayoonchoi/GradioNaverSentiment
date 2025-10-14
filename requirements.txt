@@ -1,0 +1,10 @@
+gradio
+pandas
+numpy
+requests
+beautifulsoup4
+python-dotenv
+konlpy
+# LangGraph and related libraries
+langgraph
+langchain_core
