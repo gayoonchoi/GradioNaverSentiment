@@ -268,124 +268,64 @@ class SimpleScorer:
             print(f"LLM 점수 추론 중 오류 발생: {e}")
             return 0.0
 
-    def score_sentence(self, sentence: str):
+    def score_sentence(self, sentence: str, is_positive_context: bool = False, is_negative_context: bool = False):
         final_score = 0.0
-        words = self.okt.pos(sentence, norm=True, stem=True)
 
         # 1. 초기 점수 설정 (긍정/부정 뉘앙스에 따라 0.3 또는 -0.3)
-        # LLM이 이미 문장 전체의 뉘앙스를 파악하여 점수를 반환했으므로, 여기서는 초기값을 0으로 설정하고
-        # 각 단어의 점수를 누적하는 방식으로 변경합니다.
-        # 사용자 요청에 따라, 문장 자체의 긍정/부정 뉘앙스가 있다면 0.3 또는 -0.3으로 시작합니다.
-        llm_initial_score = self.get_dynamic_score(sentence)
-        if llm_initial_score > 0:
+        if is_positive_context:
             final_score = 0.3
-        elif llm_initial_score < 0:
+        elif is_negative_context:
             final_score = -0.3
 
-        # 2. 기존 관용구로 점수 확인 (가장 높은 우선순위)
-        for idiom, idiom_score in self.kb.idioms.items():
-            if idiom in sentence:
-                final_score = idiom_score
-                break
+        # ****로 감싸진 핵심 감성 표현 추출
+        marked_phrases = re.findall(r'\*\*\*\*([^*]+)\*\*\*\*', sentence)
+        negation_factor = 1
 
-        # 3. 단어별 감성 점수 누적 및 학습
-        for word, tag in words:
-            current_word_score = 0.0
-            found_in_kb = False
+        for phrase in marked_phrases:
+            phrase = phrase.strip()
 
-            # 형용사
-            if tag.startswith("Adjective"):
-                if word in self.kb.adjectives:
-                    current_word_score = self.kb.adjectives[word]
-                    found_in_kb = True
-                elif word in self.kb.idioms:
-                    current_word_score = self.kb.idioms[word]
-                    found_in_kb = True
-                else:
-                    # LLM에 질의하여 점수 얻고 학습
-                    llm_score = self.get_dynamic_score(word, expected_tag=tag)
-                    if llm_score != 0.0:
+            # 2. 기존 관용구로 점수 확인 (가장 높은 우선순위)
+            if phrase in self.kb.idioms:
+                final_score += self.kb.idioms[phrase]
+                continue
+
+            # 3. 강조/완화/부정어 적용
+            if phrase in self.kb.amplifiers:
+                final_score *= self.kb.amplifiers[phrase]
+                continue
+            elif phrase in self.kb.downtoners:
+                final_score *= self.kb.downtoners[phrase]
+                continue
+            elif phrase in self.kb.negators:
+                negation_factor *= -1
+                continue
+
+            # 4. 단어별 감성 점수 누적 및 학습 (형용사, 부사, 명사)
+            words_in_phrase = self.okt.pos(phrase, norm=True, stem=True)
+            for word, tag in words_in_phrase:
+                current_word_score = 0.0
+                if tag.startswith("Adjective"):
+                    if word in self.kb.adjectives:
+                        current_word_score = self.kb.adjectives[word]
+                    else:
+                        llm_score = self.get_dynamic_score(word, expected_tag=tag)
                         current_word_score = llm_score
-                        # adjectives.csv에 추가
-                        with open(
-                            os.path.join(self.kb.dic_path, "adjectives.csv"),
-                            "a",
-                            newline="",
-                            encoding="utf-8",
-                        ) as f:
-                            f.write(f"\n{word},{llm_score}")
-                        self.kb.adjectives[word] = llm_score
-                        print(f"[학습] 새로운 감성 형용사: {word} (점수: {llm_score})")
-
-            # 부사
-            elif tag.startswith("Adverb"):
-                if word in self.kb.adverbs:
-                    current_word_score = self.kb.adverbs[word]
-                    found_in_kb = True
-                elif word in self.kb.idioms:
-                    current_word_score = self.kb.idioms[word]
-                    found_in_kb = True
-                else:
-                    # LLM에 질의하여 점수 얻고 학습
-                    llm_score = self.get_dynamic_score(word)
-                    if llm_score != 0.0:
+                elif tag.startswith("Adverb"):
+                    if word in self.kb.adverbs:
+                        current_word_score = self.kb.adverbs[word]
+                    else:
+                        llm_score = self.get_dynamic_score(word, expected_tag=tag)
                         current_word_score = llm_score
-                        # adverbs.csv에 추가
-                        with open(
-                            os.path.join(self.kb.dic_path, "adverbs.csv"),
-                            "a",
-                            newline="",
-                            encoding="utf-8",
-                        ) as f:
-                            f.write(f"\n{word},{llm_score}")
-                        self.kb.adverbs[word] = llm_score
-                        print(f"[학습] 새로운 감성 부사: {word} (점수: {llm_score})")
-
-            # 명사 (감성 명사)
-            elif tag.startswith("Noun"):
-                if word in self.kb.sentiment_nouns:
-                    current_word_score = self.kb.sentiment_nouns[word]
-                    found_in_kb = True
-                elif word in self.kb.idioms:
-                    current_word_score = self.kb.idioms[word]
-                    found_in_kb = True
-                else:
-                    # LLM에 질의하여 점수 얻고 학습
-                    llm_score = self.get_dynamic_score(word)
-                    if llm_score != 0.0:
+                elif tag.startswith("Noun"):
+                    if word in self.kb.sentiment_nouns:
+                        current_word_score = self.kb.sentiment_nouns[word]
+                    else:
+                        llm_score = self.get_dynamic_score(word, expected_tag=tag)
                         current_word_score = llm_score
-                        # sentiment_nouns.csv에 추가
-                        with open(
-                            os.path.join(self.kb.dic_path, "sentiment_nouns.csv"),
-                            "a",
-                            newline="",
-                            encoding="utf-8",
-                        ) as f:
-                            f.write(f"\n{word},{llm_score}")
-                        self.kb.sentiment_nouns[word] = llm_score
-                        print(f"[학습] 새로운 감성 명사: {word} (점수: {llm_score})")
 
-            # 누적 점수
-            if current_word_score != 0.0:
                 final_score += current_word_score
 
-        # 4. 강조/완화/부정어 적용
-        # LLM이 이미 반영했다고 가정했지만, 사용자 요청에 따라 다시 적용합니다.
-        for word, tag in words:
-            if word in self.kb.amplifiers:
-                final_score *= self.kb.amplifiers[word]
-            elif word in self.kb.downtoners:
-                final_score *= self.kb.downtoners[word]
-
-        negation_count = 0
-        for negator in self.kb.negators:
-            if negator in sentence:
-                negation_count += 1
-
-        if negation_count % 2 != 0:
-            final_score *= -1
-
-        return final_score
+        return final_score * negation_factor
 
 
 # --- LLM 우선 아키텍처를 위한 LangGraph 상태 및 에이전트 ---
@@ -411,10 +351,20 @@ def agent_llm_summarizer(state: LLMGraphState):
 
         본문 전체를 읽고, 글쓴이가 '{keyword}'와 관련하여 경험한 내용 전체에 대한 '긍정적인 점'과 '부정적인 점'을 각각 글머리 기호(bullet points) 형식으로 요약해주세요.
 
-        [매우 중요] 요약할 때, 감정의 강도를 나타내는 아래와 같은 표현들은 절대 생략하지 말고 그대로 유지해주세요. 이 단어들은 최종 점수 계산에 결정적인 역할을 합니다.
-        - 강조어: {list(knowledge_base.amplifiers.keys())}
-        - 완화어: {list(knowledge_base.downtoners.keys())}
-        - 부정어: {knowledge_base.negators}
+        [매우 중요] 요약할 때, 글쓴이의 감성(긍정/부정)을 명확하게 증폭시키거나 반감시키는 핵심적인 표현(명사, 형용사, 부사, 관용구 등)이 있다면, 해당 표현을 ****로 감싸서 표시해주세요.
+        예시: "이 축제는 ****정말**** ****환상적****이었어요." 또는 "음식이 ****너무**** ****별로****였어요."
+        - ****는 감성 강도에 명확하게 영향을 미치는 표현에만 사용해야 합니다.
+        - 감성 강도에 영향을 미치지 않는 일반적인 단어에는 ****를 사용하지 마세요.
+
+        [참고] 감성 표현 사전 예시:
+        - 관용어: {list(knowledge_base.idioms.keys())[:5]}...
+        - 강조어: {list(knowledge_base.amplifiers.keys())[:5]}...
+        - 완화어: {list(knowledge_base.downtoners.keys())[:5]}...
+        - 부정어: {knowledge_base.negators[:5]}...
+        - 감성 형용사: {list(knowledge_base.adjectives.keys())[:5]}...
+        - 감성 부사: {list(knowledge_base.adverbs.keys())[:5]}...
+        - 감성 명사: {list(knowledge_base.sentiment_nouns.keys())[:5]}...
+
         (예: 원문이 '정말 맛있다'이면, 요약도 '정말 맛있다'여야 합니다. '맛있다'로 줄이면 안 됩니다.)
 
         - 긍정적인 점:
@@ -453,14 +403,24 @@ def agent_rule_scorer_on_summary(state: LLMGraphState):
     sentences = [s for s in summary.split("\n") if s.strip()]
 
     final_judgments = []
+    is_positive_context = False
+    is_negative_context = False
+
     for sentence in sentences:
-        # 헤더 문장 필터링
-        if sentence.strip() == "- 긍정적인 점:" or sentence.strip() == "- 부정적인 점:":
+        if sentence.strip() == "- 긍정적인 점:":
+            is_positive_context = True
+            is_negative_context = False
+            if state["log_details"]:
+                print(f"  [필터링] 헤더 문장 제외: {sentence}")
+            continue
+        elif sentence.strip() == "- 부정적인 점:":
+            is_positive_context = False
+            is_negative_context = True
             if state["log_details"]:
                 print(f"  [필터링] 헤더 문장 제외: {sentence}")
             continue
 
-        score = scorer.score_sentence(sentence)
+        score = scorer.score_sentence(sentence, is_positive_context=is_positive_context, is_negative_context=is_negative_context)
         verdict = "중립"
         if score > 0.1:
             verdict = "긍정"
