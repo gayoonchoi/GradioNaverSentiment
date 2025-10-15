@@ -19,11 +19,24 @@ from konlpy.tag import Okt
 from dotenv import load_dotenv
 
 # .env 파일 로드 (절대 경로 명시)
-dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
-if os.path.exists(dotenv_path):
-    load_dotenv(dotenv_path=dotenv_path, encoding="utf-8")
-else:
-    print(".env 파일을 찾을 수 없습니다. API 키가 환경 변수에 설정되었는지 확인하세요.")
+# __file__ 변수가 없는 환경(예: Jupyter notebook)을 위해 예외 처리
+try:
+    dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(dotenv_path):
+        load_dotenv(dotenv_path=dotenv_path, encoding="utf-8")
+    else:
+        print(
+            ".env 파일을 찾을 수 없습니다. API 키가 환경 변수에 설정되었는지 확인하세요."
+        )
+except NameError:
+    print(
+        "현재 실행 환경에서는 __file__ 변수를 사용할 수 없습니다. .env 파일이 작업 디렉토리에 있는지 확인하세요."
+    )
+    if os.path.exists(".env"):
+        load_dotenv(encoding="utf-8")
+    else:
+        print(".env 파일을 찾을 수 없습니다.")
+
 from typing import TypedDict, List, Dict
 from collections import Counter
 from langgraph.graph import StateGraph, END
@@ -48,39 +61,28 @@ class KnowledgeBase:
 
     def _load_dictionaries(self):
         try:
-            self.idioms = (
-                pd.read_csv(os.path.join(self.dic_path, "idioms.csv"))
-                .set_index("phrase")["score"]
-                .to_dict()
-            )
-            self.amplifiers = (
-                pd.read_csv(os.path.join(self.dic_path, "amplifiers.csv"))
-                .set_index("phrase")["multiplier"]
-                .to_dict()
-            )
-            self.downtoners = (
-                pd.read_csv(os.path.join(self.dic_path, "downtoners.csv"))
-                .set_index("phrase")["multiplier"]
-                .to_dict()
-            )
+
+            def _load_dict_list(file_path, score_col='score'):
+                df = pd.read_csv(file_path)
+                new_dict = {}
+                for _, row in df.iterrows():
+                    phrase = row['phrase']
+                    score = row[score_col]
+                    if phrase not in new_dict:
+                        new_dict[phrase] = []
+                    new_dict[phrase].append(score)
+                return new_dict
+
+            self.idioms = _load_dict_list(os.path.join(self.dic_path, "idioms.csv"))
+            self.amplifiers = _load_dict_list(os.path.join(self.dic_path, "amplifiers.csv"), score_col='multiplier')
+            self.downtoners = _load_dict_list(os.path.join(self.dic_path, "downtoners.csv"), score_col='multiplier')
             self.negators = pd.read_csv(os.path.join(self.dic_path, "negators.csv"))[
                 "phrase"
             ].tolist()
-            self.adjectives = (
-                pd.read_csv(os.path.join(self.dic_path, "adjectives.csv"))
-                .set_index("phrase")["score"]
-                .to_dict()
-            )
-            self.adverbs = (
-                pd.read_csv(os.path.join(self.dic_path, "adverbs.csv"))
-                .set_index("phrase")["score"]
-                .to_dict()
-            )
-            self.sentiment_nouns = (
-                pd.read_csv(os.path.join(self.dic_path, "sentiment_nouns.csv"))
-                .set_index("phrase")["score"]
-                .to_dict()
-            )
+            self.adjectives = _load_dict_list(os.path.join(self.dic_path, "adjectives.csv"))
+            self.adverbs = _load_dict_list(os.path.join(self.dic_path, "adverbs.csv"))
+            self.sentiment_nouns = _load_dict_list(os.path.join(self.dic_path, "sentiment_nouns.csv"))
+
         except FileNotFoundError as e:
             print(f"사전 파일 로드 오류: {e}. 빈 사전으로 시작합니다.")
             self.idioms, self.amplifiers, self.downtoners, self.negators = (
@@ -90,6 +92,18 @@ class KnowledgeBase:
                 [],
             )
             self.adjectives, self.adverbs, self.sentiment_nouns = {}, {}, {}
+
+
+    def is_known_word(self, word: str) -> bool:
+        return (
+            word in self.idioms
+            or word in self.amplifiers
+            or word in self.downtoners
+            or word in self.negators
+            or word in self.adjectives
+            or word in self.adverbs
+            or word in self.sentiment_nouns
+        )
 
 
 knowledge_base = KnowledgeBase()
@@ -109,7 +123,9 @@ class SimpleScorer:
             )
             self.llm = None
 
-    def get_dynamic_score(self, sentence_to_score: str, expected_tag: str = None) -> float:
+    def get_dynamic_score(
+        self, sentence_to_score: str, expected_tag: str = None, is_positive_context: bool = False, is_negative_context: bool = False
+    ) -> float:
         if not self.llm:
             return 0.0
 
@@ -117,6 +133,12 @@ class SimpleScorer:
             tag_guidance = ""
             if expected_tag:
                 tag_guidance = f"\n[참고] 이 표현은 형태소 분석 결과 '{expected_tag}' 품사로 분류되었습니다. 이 정보를 바탕으로 가장 적절한 카테고리 번호를 선택해주세요."
+            
+            context_guidance = "중립"
+            if is_positive_context:
+                context_guidance = "긍정"
+            elif is_negative_context:
+                context_guidance = "부정"
 
             prompt = f"""
             당신은 한국어 신조어, 관용어, 그리고 감성적인 형용사/부사/명사에 능숙한 감성 분석 전문가입니다. 새로운 구절의 감성 점수를 추론해야 합니다.
@@ -136,22 +158,27 @@ class SimpleScorer:
 
             분석할 문장: "{sentence_to_score}"
 
+            [문맥 정보]
+            이 표현은 전반적으로 '{context_guidance}'적인 문맥에서 나타났습니다. 이 문맥을 반드시 고려하여 점수를 추론해주세요.
+
             [지시사항]
             1. 위 문장에서, 기존 사전에 없는 새로운 '핵심 감성 표현' 구절(phrase)을 딱 하나만 찾아주세요.
-            2. '핵심 감성 표현'은 다른 문장에서도 재사용될 수 있는 일반적인 관용어, 신조어, 또는 감성적인 형용사/부사/명사여야 합니다. (예: '가성비 갑', '분위기 깡패', '기대 이상', '황홀하다', '편하게', '만족감')
+            2. '핵심 감성 표현'은 다른 문장에서도 재사용될 수 있는 일반적인 관용어, 신조어, 또는 감성적인 형용사/부사/명사여야 합니다.
             3. 문장 전체가 아니라, 그 안의 핵심적인 구절만 정확히 추출해야 합니다.
             4. 만약 문장에 재사용 가능한 특별한 감성 표현이 없다면, '없음'이라고 반환해야 합니다.
-            5. 추출한 '핵심 감성 표현'이 1(관용어), 2(강조어), 3(완화어), 4(부정어), 5(형용사), 6(부사), 7(감성 명사) 중 어떤 카테고리에 속하는지, 그리고 그 표현이 문맥에서 가지는 '최종적인 감성 점수'는 얼마가 적절할지 추론해주세요.
-            6. '최종적인 감성 점수'는 해당 표현이 문장 내에서 강조어, 완화어, 부정어 등의 영향을 모두 고려한 최종적인 감성 강도여야 합니다.
-            7. 만약 추출한 표현이 없더라도, 문장 자체에 긍정 또는 부정 뉘앙스가 있다면, 점수는 0.0이 아닌 약간의 긍정/부정 값(예: 0.3 또는 -0.3)을 부여해야 합니다.
+            5. 추출한 '핵심 감성 표현'이 1~7 중 어떤 카테고리에 속하는지 결정해주세요.
+            6. **카테고리 2(강조어) 또는 3(완화어)으로 결정했다면, '점수' 부분에 긍정적인 '점수 배율'을 반환해주세요. (예: 강조어는 1.5, 완화어는 0.5)**
+            7. **나머지 카테고리(1, 5, 6, 7)로 결정했다면, 문맥에서 가지는 '최종적인 감성 점수'(-2.0 ~ 2.0)를 '점수' 부분에 반환해주세요.**
+            8. **[매우 중요] '{context_guidance}' 문맥에 따라 점수의 부호(+/-)가 결정되어야 합니다. 긍정적 문맥에서는 반드시 양수 점수를, 부정적 문맥에서는 반드시 음수 점수를 부여해야 합니다.**
+            9. 만약 추출한 표현이 없더라도, 문장 자체에 긍정 또는 부정 뉘앙스가 있다면, 문맥에 맞는 약간의 긍정/부정 값(예: 0.3 또는 -0.3)을 부여해야 합니다.
             {tag_guidance}
 
             [답변 형식]
             '카테고리 번호,핵심 감성 표현,점수' 형식으로만 반환해주세요.
-            - 예시 1 (새로운 관용어 발견): 1,분위기 깡패,1.5
-            - 예시 2 (새로운 감성 형용사 발견): 5,황홀하다,1.2
-            - 예시 3 (감성적이나 관용어/형용사/부사는 없음): 0,없음,0.3
-            - 예시 4 (완전 중립): 0,없음,0.0
+            - 예시 1 (긍정 문맥의 새로운 명사): 7,꽉찬,1.2
+            - 예시 2 (부정 문맥의 새로운 명사): 7,꽉찬,-1.1
+            - 예시 3 (새로운 강조어): 2,훨씬,1.4
+            - 예시 4 (감성적이나 특별한 표현 없음): 0,없음,0.3
             """
 
             response = self.llm.invoke(prompt)
@@ -268,7 +295,12 @@ class SimpleScorer:
             print(f"LLM 점수 추론 중 오류 발생: {e}")
             return 0.0
 
-    def score_sentence(self, sentence: str, is_positive_context: bool = False, is_negative_context: bool = False):
+    def score_sentence(
+        self,
+        sentence: str,
+        is_positive_context: bool = False,
+        is_negative_context: bool = False,
+    ):
         final_score = 0.0
 
         # 1. 초기 점수 설정 (긍정/부정 뉘앙스에 따라 0.3 또는 -0.3)
@@ -277,107 +309,115 @@ class SimpleScorer:
         elif is_negative_context:
             final_score = -0.3
 
-        # ****로 감싸진 핵심 감성 표현 및 수식어구 추출
-        # 그룹 1: ****로 감싸진 구문, 그룹 2: (수식어구: ...) 안의 내용 (있을 경우)
-        marked_phrases_with_modifiers = re.findall(r'\*\*\*\*([^*]+)\*\*\*\*(?:\(수식어구:\s*([^\)]+)\))?', sentence)
+        marked_phrases_with_modifiers = re.findall(
+            r"\*\*\*\*([^*]+)\*\*\*\*(?:\(수식어구:\s*([^\)]+)\))?", sentence
+        )
 
         positive_contribution = 0.0
         negative_contribution = 0.0
-
-        # 수식어구에 의해 수정될 수 있는 감성 단어들의 점수를 임시 저장
-        # {수식어구: 점수}
         modified_word_scores = {}
 
-        # 1차 처리: 감성 단어들의 점수를 먼저 계산하고 저장
+        def get_contextual_score(scores: list, is_pos, is_neg):
+            if is_pos:
+                for s in scores:
+                    if s > 0:
+                        return s, True
+            elif is_neg:
+                for s in scores:
+                    if s < 0:
+                        return s, True
+            return None, False
+
         for phrase, modifier_target in marked_phrases_with_modifiers:
             phrase = phrase.strip()
             modifier_target = modifier_target.strip() if modifier_target else None
 
-            # 강조어/완화어/부정어는 1차 처리에서 건너뛰고, 감성 단어만 처리
-            if phrase in self.kb.amplifiers or \
-               phrase in self.kb.downtoners or \
-               phrase in self.kb.negators:
+            if (
+                phrase in self.kb.amplifiers
+                or phrase in self.kb.downtoners
+                or phrase in self.kb.negators
+            ):
                 continue
 
             current_phrase_score = 0.0
             if phrase in self.kb.idioms:
-                current_phrase_score = self.kb.idioms[phrase]
+                scores = self.kb.idioms[phrase]
+                score, found = get_contextual_score(scores, is_positive_context, is_negative_context)
+                if found:
+                    current_phrase_score = score
+                else:
+                    current_phrase_score = self.get_dynamic_score(
+                        phrase, "Idiom", is_positive_context, is_negative_context
+                    )
             else:
                 words_in_phrase = self.okt.pos(phrase, norm=True, stem=True)
                 for word, tag in words_in_phrase:
                     word_score = 0.0
-                    if tag.startswith("Adjective"):
-                        if word in self.kb.adjectives:
-                            word_score = self.kb.adjectives[word]
-                        else:
-                            llm_score = self.get_dynamic_score(word, expected_tag=tag)
-                            word_score = llm_score
-                    elif tag.startswith("Adverb"):
-                        if word in self.kb.adverbs:
-                            word_score = self.kb.adverbs[word]
-                        else:
-                            llm_score = self.get_dynamic_score(word, expected_tag=tag)
-                            word_score = llm_score
-                    elif tag.startswith("Noun"):
-                        if word in self.kb.sentiment_nouns:
-                            word_score = self.kb.sentiment_nouns[word]
-                        else:
-                            llm_score = self.get_dynamic_score(word, expected_tag=tag)
-                            word_score = llm_score
+                    if self.kb.is_known_word(word):
+                        scores = []
+                        if tag.startswith("Adjective") and word in self.kb.adjectives:
+                            scores = self.kb.adjectives[word]
+                        elif tag.startswith("Adverb") and word in self.kb.adverbs:
+                            scores = self.kb.adverbs[word]
+                        elif tag.startswith("Noun") and word in self.kb.sentiment_nouns:
+                            scores = self.kb.sentiment_nouns[word]
+                        
+                        if scores:
+                            score, found = get_contextual_score(scores, is_positive_context, is_negative_context)
+                            if found:
+                                word_score = score
+                            else:
+                                word_score = self.get_dynamic_score(
+                                    word, tag, is_positive_context, is_negative_context
+                                )
+                    else:
+                        if tag.startswith("Adjective") or tag.startswith("Adverb") or tag.startswith("Noun"):
+                            word_score = self.get_dynamic_score(
+                                word, tag, is_positive_context, is_negative_context
+                            )
                     current_phrase_score += word_score
 
             if modifier_target:
                 modified_word_scores[modifier_target] = current_phrase_score
             else:
-                # 수식어구가 없는 감성 단어는 바로 기여도에 추가
                 if current_phrase_score > 0:
                     positive_contribution += current_phrase_score
                 elif current_phrase_score < 0:
                     negative_contribution += current_phrase_score
 
-        # 2차 처리: 강조어/완화어/부정어 적용
-        negation_factor = 1
         for phrase, modifier_target in marked_phrases_with_modifiers:
             phrase = phrase.strip()
             modifier_target = modifier_target.strip() if modifier_target else None
 
+            def get_multiplier(dictionary, p, is_pos, is_neg):
+                if p in dictionary:
+                    multipliers = dictionary[p]
+                    # 배율은 항상 양수이므로, 문맥과 상관없이 첫번째 값을 사용
+                    # 향후 문맥에 따라 다른 배율을 적용해야 한다면 로직 수정 필요
+                    return multipliers[0]
+                return 1.0
+
             if phrase in self.kb.amplifiers:
-                multiplier = self.kb.amplifiers[phrase]
+                multiplier = get_multiplier(self.kb.amplifiers, phrase, is_positive_context, is_negative_context)
                 if modifier_target and modifier_target in modified_word_scores:
-                    score_to_modify = modified_word_scores[modifier_target]
-                    modified_word_scores[modifier_target] = score_to_modify * multiplier
-                # else: 연결된 수식어구가 없으면 효과를 적용하지 않음 (사용자 요청)
+                    modified_word_scores[modifier_target] *= multiplier
             elif phrase in self.kb.downtoners:
-                multiplier = self.kb.downtoners[phrase]
+                multiplier = get_multiplier(self.kb.downtoners, phrase, is_positive_context, is_negative_context)
                 if modifier_target and modifier_target in modified_word_scores:
-                    score_to_modify = modified_word_scores[modifier_target]
-                    modified_word_scores[modifier_target] = score_to_modify * multiplier
-                # else: 연결된 수식어구가 없으면 효과를 적용하지 않음 (사용자 요청)
+                    modified_word_scores[modifier_target] *= multiplier
             elif phrase in self.kb.negators:
                 if modifier_target and modifier_target in modified_word_scores:
-                    score_to_modify = modified_word_scores[modifier_target]
-                    modified_word_scores[modifier_target] = score_to_modify * -1
-                # else: 연결된 수식어구가 없으면 효과를 적용하지 않음 (사용자 요청)
+                    modified_word_scores[modifier_target] *= -1
 
-        # 3차 처리: 수정된 감성 단어 점수들을 최종 기여도에 합산
         for target, score in modified_word_scores.items():
             if score > 0:
                 positive_contribution += score
             elif score < 0:
                 negative_contribution += score
 
-        # 4. 최종적으로 전체 부정 계수 적용 (연결되지 않은 부정어의 경우)
-        # 사용자 요청에 따라, 연결되지 않은 부정어는 전체 기여도에 영향을 미치지 않음.
-        # 따라서 이 부분은 제거하거나, negation_factor를 1로 유지.
-        # 현재 코드에서는 negation_factor가 1로 초기화되고, 연결된 부정어만 처리하므로 이 줄은 필요 없음.
-        # positive_contribution *= negation_factor
-        # negative_contribution *= negation_factor
-
-        # 5. 최종 점수 합산
         final_score += positive_contribution
         final_score += negative_contribution
 
-        # Fallback: If score is 0.0 but context is positive/negative, apply base score
         if final_score == 0.0:
             if is_positive_context:
                 final_score = 0.3
@@ -410,15 +450,16 @@ def agent_llm_summarizer(state: LLMGraphState):
     llm = ChatGoogleGenerativeAI(temperature=0.0, model="gemini-2.5-pro")
 
     system_prompt = "당신은 블로그 리뷰의 핵심 요약 전문가입니다."
-    user_prompt = f"아래는 '{keyword}'에 대한 블로그 리뷰 본문입니다.\n\n본문 전체를 읽고, 글쓴이가 '{keyword}'와 관련하여 경험한 내용 전체에 대한 '긍정적인 점'과 '부정적인 점'을 각각 글머리 기호(bullet points) 형식으로 요약해주세요.\n\n[매우 중요] 요약할 때, 글쓴이의 감성(긍정/부정)을 명확하게 증폭시키거나 반감시키는 **강조어, 완화어, 부정어**와 같은 핵심적인 표현이 있다면, 해당 표현을 ****로 감싸서 표시해주세요. 이때, 해당 표현이 어떤 긍정/부정 단어 또는 구문에 영향을 미치는지 명확하다면, 그 뒤에 (수식어구: [영향을 미치는 긍정/부정 단어 또는 구문]) 형식으로 괄호 안에 명시해주세요.\n명사, 형용사, 부사, 관용어와 같은 감성 단어는 ****로 감싸기만 하고, (수식어구: ...)를 붙이지 마세요.\n예시: \"이 축제는 ****정말****(수식어구: 환상적)이었어요.\" 또는 \"음식이 ****너무****(수식어구: 별로)였어요.\" 그리고 \"불꽃놀이는 ****황홀****했어요.\"\n- ****는 감성 강도에 명확하게 영향을 미치는 표현에만 사용해야 합니다.\n- 감성 강도에 영향을 미치지 않는 일반적인 단어에는 ****를 사용하지 마세요.\n\n[참고] 감성 표현 사전 예시:\n- 관용어: {list(knowledge_base.idioms.keys())[:5]}...\n- 강조어: {list(knowledge_base.amplifiers.keys())[:5]}...\n- 완화어: {list(knowledge_base.downtoners.keys())[:5]}...\n- 부정어: {knowledge_base.negators[:5]}...\n- 감성 형용사: {list(knowledge_base.adjectives.keys())[:5]}...\n- 감성 부사: {list(knowledge_base.adverbs.keys())[:5]}...\n- 감성 명사: {list(knowledge_base.sentiment_nouns.keys())[:5]}...\n\n(예: 원문이 '정말 맛있다'이면, 요약도 '정말 맛있다'여야 합니다. '맛있다'로 줄이면 안 됩니다.)\n\n다른 부가적인 설명 없이, 아래의 정확한 형식에 맞춰 요약만 제공해주세요.\n\n- 긍정적인 점:\n  - (여기에 긍정적인 경험 요약)\n- 부정적인 점:\n  - (여기에 부정적인 경험 요약)\n\n--- 블로그 본문 시작 ---\n{text}\n--- 블로그 본문 끝 ---"
-
-    if feedback_message and re_summarize_count < 3: # 최대 3회 재요약 시도
+    user_prompt = f"아래는 '{keyword}'에 대한 블로그 리뷰 본문입니다.\n\n본문 전체를 읽고, 글쓴이가 '{keyword}'와 관련하여 경험한 내용 전체에 대한 '긍정적인 점'과 '부정적인 점'을 각각 글머리 기호(bullet points) 형식으로 요약해주세요.\n\n[매우 중요] 요약 시, 감성 표현(명사, 형용사, 부사, 관용어)과 그 감성을 수식하는 표현(강조어, 완화어, 부정어)을 모두 ****로 감싸주세요. 만약 수식 관계가 명확하다면, 수식어 뒤에 (수식어구: [수식받는 감성 표현]) 형식으로 괄호를 추가해주세요.\n예시: \"이 축제는 ****정말****(수식어구: 환상적) ****환상적****이었어요.\" 또는 \"음식이 ****너무****(수식어구: 별로) ****별로****였어요.\" 그리고 \"불꽃놀이는 ****황홀****했어요.\"\n- ****는 감성 강도에 명확하게 영향을 미치는 표현에만 사용해야 합니다.\n- 감성 강도에 영향을 미치지 않는 일반적인 단어에는 ****를 사용하지 마세요.\n\n[참고] 감성 표현 사전 예시:\n- 관용어: {list(knowledge_base.idioms.keys())[:5]}...\n- 강조어: {list(knowledge_base.amplifiers.keys())[:5]}...\n- 완화어: {list(knowledge_base.downtoners.keys())[:5]}...\n- 부정어: {knowledge_base.negators[:5]}...\n- 감성 형용사: {list(knowledge_base.adjectives.keys())[:5]}...\n- 감성 부사: {list(knowledge_base.adverbs.keys())[:5]}...\n- 감성 명사: {list(knowledge_base.sentiment_nouns.keys())[:5]}...\n\n(예: 원문이 '정말 맛있다'이면, 요약도 '정말 맛있다'여야 합니다. '맛있다'로 줄이면 안 됩니다.)\n\n다른 부가적인 설명 없이, 아래의 정확한 형식에 맞춰 요약만 제공해주세요.\n\n- 긍정적인 점:\n  - (여기에 긍정적인 경험 요약)\n- 부정적인 점:\n  - (여기에 부정적인 경험 요약)\n\n--- 블로그 본문 시작 ---\n{text}\n--- 블로그 본문 끝 ---"
+    if feedback_message and re_summarize_count < 3:  # 최대 3회 재요약 시도
         user_prompt = f"""{user_prompt}\n\n[이전 요약에 대한 피드백]\n{feedback_message}\n\n위 피드백을 바탕으로 요약을 다시 생성해주세요. 특히 감성 표현의 마킹과 수식어구 연결에 주의하여 감성 점수와 일관되도록 해주세요."""
         if state["log_details"]:
-            print(f"  [LLM 재요청] 피드백 반영하여 요약 재시도 (시도 횟수: {re_summarize_count + 1})")
+            print(
+                f"   [LLM 재요청] 피드백 반영하여 요약 재시도 (시도 횟수: {re_summarize_count + 1})"
+            )
     elif re_summarize_count >= 3:
         if state["log_details"]:
-            print("  [LLM 재요청 실패] 최대 재요약 횟수 초과. 원본 요약 반환.")
+            print("   [LLM 재요청 실패] 최대 재요약 횟수 초과. 원본 요약 반환.")
         return {"llm_summary": state["llm_summary"], "feedback_message": None}
 
     try:
@@ -449,68 +490,83 @@ def agent_rule_scorer_on_summary(state: LLMGraphState):
     is_positive_context = False
     is_negative_context = False
 
-    # 일관성 검사 헬퍼 함수
-    def is_inconsistent(verdict, score):
-        return (verdict == "긍정" and score < 0.0) or \
-               (verdict == "부정" and score > 0.0)
+    # 일관성 검사 헬퍼 함수 (수정됨)
+    def is_inconsistent(is_pos, is_neg, score):
+        # 긍정 문맥에서 점수가 0 미만이거나, 부정 문맥에서 점수가 0 초과이면 불일치
+        return (is_pos and score < 0.0) or (is_neg and score > 0.0)
 
     for sentence in sentences:
         if sentence.strip() == "- 긍정적인 점:":
             is_positive_context = True
             is_negative_context = False
             if state["log_details"]:
-                print(f"  [필터링] 헤더 문장 제외: {sentence}")
+                print(f"   [필터링] 헤더 문장 제외: {sentence}")
             continue
-        elif sentence.strip() == "- 부정적인 점:":
+        elif sentence.strip() == "- 부정적인 점:" or sentence.strip().startswith(
+            "- 본문에 언급된 부정적인 점은"
+        ):
             is_positive_context = False
             is_negative_context = True
             if state["log_details"]:
-                print(f"  [필터링] 헤더 문장 제외: {sentence}")
+                print(f"   [필터링] 헤더 문장 제외: {sentence}")
             continue
 
-        score = scorer.score_sentence(sentence, is_positive_context=is_positive_context, is_negative_context=is_negative_context)
+        score = scorer.score_sentence(
+            sentence,
+            is_positive_context=is_positive_context,
+            is_negative_context=is_negative_context,
+        )
+
+        # 1차 일관성 검사 (수정됨)
+        if is_inconsistent(is_positive_context, is_negative_context, score):
+            if state["log_details"]:
+                print(
+                    f"   [불일치 감지] 1차: {'긍정' if is_positive_context else '부정'} 문맥의 문장이 {score:.2f} 점수. 재계산 시도."
+                )
+
+            # 재계산 시도
+            recalculated_score = scorer.score_sentence(
+                sentence,
+                is_positive_context=is_positive_context,
+                is_negative_context=is_negative_context,
+            )
+
+            # 재계산 후 2차 일관성 검사 (수정됨)
+            if is_inconsistent(is_positive_context, is_negative_context, recalculated_score):
+                feedback_msg = (
+                    f"LLM 요약 내용 중 감성 점수 불일치 발생: "
+                    f"'{sentence}' 문장은 {'긍정' if is_positive_context else '부정'} 문맥에 있지만, "
+                    f"점수는 {recalculated_score:.2f}로 잘못 계산되었습니다. "
+                    f"해당 문장의 감성을 다시 평가하고, 감성 표현을 정확히 마킹하여 요약해주세요."
+                )
+                if state["log_details"]:
+                    print(
+                        f"   [불일치 지속] 2차: {'긍정' if is_positive_context else '부정'} 문맥의 문장이 {recalculated_score:.2f} 점수. LLM 재요약 요청."
+                    )
+                return {
+                    "feedback_message": feedback_msg,
+                    "re_summarize_count": state.get("re_summarize_count", 0) + 1,
+                }
+            else:
+                # 재계산으로 일관성 확보
+                score = recalculated_score
+                if state["log_details"]:
+                    print(
+                        f"   [일관성 확보] 재계산 후: {'긍정' if is_positive_context else '부정'} 문맥의 문장이 {score:.2f} 점수."
+                    )
+        
+        # 최종 판정(verdict)은 점수에 따라 결정
         verdict = "중립"
         if score > 0.1:
             verdict = "긍정"
         elif score < -0.1:
             verdict = "부정"
 
-        # 1차 일관성 검사
-        if is_inconsistent(verdict, score):
-            if state["log_details"]:
-                print(f"  [불일치 감지] 1차: {verdict} 문장이 {score:.2f} 점수. 재계산 시도.")
-            
-            # 재계산 시도
-            recalculated_score = scorer.score_sentence(sentence, is_positive_context=is_positive_context, is_negative_context=is_negative_context)
-            recalculated_verdict = "중립"
-            if recalculated_score > 0.1:
-                recalculated_verdict = "긍정"
-            elif recalculated_score < -0.1:
-                recalculated_verdict = "부정"
-            
-            # 재계산 후 2차 일관성 검사
-            if is_inconsistent(recalculated_verdict, recalculated_score):
-                feedback_msg = (
-                    f"LLM 요약 내용 중 감성 점수 불일치 발생: "
-                    f"'{sentence}' 문장은 {verdict}으로 요약되었으나, "
-                    f"점수는 {score:.2f}로 {recalculated_verdict}입니다. "
-                    f"해당 문장의 감성을 다시 평가하고, 감성 표현을 정확히 마킹하여 요약해주세요."
-                )
-                if state["log_details"]:
-                    print(f"  [불일치 지속] 2차: {recalculated_verdict} 문장이 {recalculated_score:.2f} 점수. LLM 재요약 요청.")
-                return {"feedback_message": feedback_msg, "re_summarize_count": state["re_summarize_count"] + 1}
-            else:
-                # 재계산으로 일관성 확보
-                score = recalculated_score
-                verdict = recalculated_verdict
-                if state["log_details"]:
-                    print(f"  [일관성 확보] 재계산 후: {verdict} 문장이 {score:.2f} 점수.")
-
         final_judgments.append(
             {"sentence": sentence, "final_verdict": verdict, "score": score}
         )
         if state["log_details"]:
-            print(f"  [{verdict}] 점수: {score:.2f} | 문장: {sentence}")
+            print(f"   [{verdict}] 점수: {score:.2f} | 문장: {sentence}")
 
     return {"final_judgments": final_judgments, "feedback_message": None}
 
@@ -522,6 +578,7 @@ def route_sentiment_analysis(state: LLMGraphState):
     else:
         return "__end__"
 
+
 llm_workflow = StateGraph(LLMGraphState)
 llm_workflow.add_node("llm_summarizer", agent_llm_summarizer)
 llm_workflow.add_node("rule_scorer", agent_rule_scorer_on_summary)
@@ -529,10 +586,7 @@ llm_workflow.add_edge("llm_summarizer", "rule_scorer")
 llm_workflow.add_conditional_edges(
     "rule_scorer",
     route_sentiment_analysis,
-    {
-        "llm_summarizer": "llm_summarizer",
-        "__end__": END
-    }
+    {"llm_summarizer": "llm_summarizer", "__end__": END},
 )
 llm_workflow.set_entry_point("llm_summarizer")
 app_llm_graph = llm_workflow.compile()
@@ -703,7 +757,12 @@ def analyze_keyword_and_generate_report(
             else:
                 # 모든 블로그에 대해 상세 로그를 출력하도록 수정
                 final_state = app_llm_graph.invoke(
-                    {"original_text": content, "keyword": keyword, "log_details": True}
+                    {
+                        "original_text": content,
+                        "keyword": keyword,
+                        "log_details": True,
+                        "re_summarize_count": 0,
+                    }
                 )
                 judgments = [
                     res["final_verdict"] for res in final_state["final_judgments"]
