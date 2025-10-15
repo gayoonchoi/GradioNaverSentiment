@@ -394,6 +394,8 @@ class LLMGraphState(TypedDict):
     log_details: bool
     llm_summary: str
     final_judgments: List[Dict]
+    feedback_message: str | None
+    re_summarize_count: int
 
 
 def agent_llm_summarizer(state: LLMGraphState):
@@ -402,49 +404,25 @@ def agent_llm_summarizer(state: LLMGraphState):
 
     text = state["original_text"]
     keyword = state["keyword"]
+    feedback_message = state.get("feedback_message")
+    re_summarize_count = state.get("re_summarize_count", 0)
+
+    llm = ChatGoogleGenerativeAI(temperature=0.0, model="gemini-2.5-pro")
+
+    system_prompt = "당신은 블로그 리뷰의 핵심 요약 전문가입니다."
+    user_prompt = f"아래는 '{keyword}'에 대한 블로그 리뷰 본문입니다.\n\n본문 전체를 읽고, 글쓴이가 '{keyword}'와 관련하여 경험한 내용 전체에 대한 '긍정적인 점'과 '부정적인 점'을 각각 글머리 기호(bullet points) 형식으로 요약해주세요.\n\n[매우 중요] 요약할 때, 글쓴이의 감성(긍정/부정)을 명확하게 증폭시키거나 반감시키는 **강조어, 완화어, 부정어**와 같은 핵심적인 표현이 있다면, 해당 표현을 ****로 감싸서 표시해주세요. 이때, 해당 표현이 어떤 긍정/부정 단어 또는 구문에 영향을 미치는지 명확하다면, 그 뒤에 (수식어구: [영향을 미치는 긍정/부정 단어 또는 구문]) 형식으로 괄호 안에 명시해주세요.\n명사, 형용사, 부사, 관용어와 같은 감성 단어는 ****로 감싸기만 하고, (수식어구: ...)를 붙이지 마세요.\n예시: \"이 축제는 ****정말****(수식어구: 환상적)이었어요.\" 또는 \"음식이 ****너무****(수식어구: 별로)였어요.\" 그리고 \"불꽃놀이는 ****황홀****했어요.\"\n- ****는 감성 강도에 명확하게 영향을 미치는 표현에만 사용해야 합니다.\n- 감성 강도에 영향을 미치지 않는 일반적인 단어에는 ****를 사용하지 마세요.\n\n[참고] 감성 표현 사전 예시:\n- 관용어: {list(knowledge_base.idioms.keys())[:5]}...\n- 강조어: {list(knowledge_base.amplifiers.keys())[:5]}...\n- 완화어: {list(knowledge_base.downtoners.keys())[:5]}...\n- 부정어: {knowledge_base.negators[:5]}...\n- 감성 형용사: {list(knowledge_base.adjectives.keys())[:5]}...\n- 감성 부사: {list(knowledge_base.adverbs.keys())[:5]}...\n- 감성 명사: {list(knowledge_base.sentiment_nouns.keys())[:5]}...\n\n(예: 원문이 '정말 맛있다'이면, 요약도 '정말 맛있다'여야 합니다. '맛있다'로 줄이면 안 됩니다.)\n\n다른 부가적인 설명 없이, 아래의 정확한 형식에 맞춰 요약만 제공해주세요.\n\n- 긍정적인 점:\n  - (여기에 긍정적인 경험 요약)\n- 부정적인 점:\n  - (여기에 부정적인 경험 요약)\n\n--- 블로그 본문 시작 ---\n{text}\n--- 블로그 본문 끝 ---"
+
+    if feedback_message and re_summarize_count < 3: # 최대 3회 재요약 시도
+        user_prompt = f"""{user_prompt}\n\n[이전 요약에 대한 피드백]\n{feedback_message}\n\n위 피드백을 바탕으로 요약을 다시 생성해주세요. 특히 감성 표현의 마킹과 수식어구 연결에 주의하여 감성 점수와 일관되도록 해주세요."""
+        if state["log_details"]:
+            print(f"  [LLM 재요청] 피드백 반영하여 요약 재시도 (시도 횟수: {re_summarize_count + 1})")
+    elif re_summarize_count >= 3:
+        if state["log_details"]:
+            print("  [LLM 재요청 실패] 최대 재요약 횟수 초과. 원본 요약 반환.")
+        return {"llm_summary": state["llm_summary"], "feedback_message": None}
 
     try:
-        llm = ChatGoogleGenerativeAI(temperature=0.0, model="gemini-2.5-pro")
-        prompt = f"""
-        당신은 블로그 리뷰의 핵심 요약 전문가입니다. 아래는 '{keyword}'에 대한 블로그 리뷰 본문입니다.
-
-        본문 전체를 읽고, 글쓴이가 '{keyword}'와 관련하여 경험한 내용 전체에 대한 '긍정적인 점'과 '부정적인 점'을 각각 글머리 기호(bullet points) 형식으로 요약해주세요.
-
-        [매우 중요] 요약할 때, 글쓴이의 감성(긍정/부정)을 명확하게 증폭시키거나 반감시키는 **강조어, 완화어, 부정어**와 같은 핵심적인 표현이 있다면, 해당 표현을 ****로 감싸서 표시해주세요. 이때, 해당 표현이 어떤 긍정/부정 단어 또는 구문에 영향을 미치는지 명확하다면, 그 뒤에 (수식어구: [영향을 미치는 긍정/부정 단어 또는 구문]) 형식으로 괄호 안에 명시해주세요.
-        명사, 형용사, 부사, 관용어와 같은 감성 단어는 ****로 감싸기만 하고, (수식어구: ...)를 붙이지 마세요.
-        예시: "이 축제는 ****정말****(수식어구: 환상적)이었어요." 또는 "음식이 ****너무****(수식어구: 별로)였어요." 그리고 "불꽃놀이는 ****황홀****했어요."
-        - ****는 감성 강도에 명확하게 영향을 미치는 표현에만 사용해야 합니다.
-        - 감성 강도에 영향을 미치지 않는 일반적인 단어에는 ****를 사용하지 마세요.
-
-        [참고] 감성 표현 사전 예시:
-        - 관용어: {list(knowledge_base.idioms.keys())[:5]}...
-        - 강조어: {list(knowledge_base.amplifiers.keys())[:5]}...
-        - 완화어: {list(knowledge_base.downtoners.keys())[:5]}...
-        - 부정어: {knowledge_base.negators[:5]}...
-        - 감성 형용사: {list(knowledge_base.adjectives.keys())[:5]}...
-        - 감성 부사: {list(knowledge_base.adverbs.keys())[:5]}...
-        - 감성 명사: {list(knowledge_base.sentiment_nouns.keys())[:5]}...
-
-        (예: 원문이 '정말 맛있다'이면, 요약도 '정말 맛있다'여야 합니다. '맛있다'로 줄이면 안 됩니다.)
-
-        - 긍정적인 점:
-          - (여기에 긍정적인 경험 요약)
-        - 부정적인 점:
-          - (여기에 부정적인 경험 요약)
-
-        다른 부가적인 설명 없이, 아래의 정확한 형식에 맞춰 요약만 제공해주세요.
-
-        - 긍정적인 점:
-          - (여기에 긍정적인 경험 요약)
-        - 부정적인 점:
-          - (여기에 부정적인 경험 요약)
-
-        --- 블로그 본문 시작 ---
-        {text}
-        --- 블로그 본문 끝 ---
-        """
-
-        response = llm.invoke(prompt)
+        response = llm.invoke(user_prompt)
         summary = response.content.strip()
 
     except Exception as e:
@@ -456,7 +434,7 @@ def agent_llm_summarizer(state: LLMGraphState):
         print(summary if summary else "[요약할 내용이 없습니다]")
         print("---------------------------")
 
-    return {"llm_summary": summary}
+    return {"llm_summary": summary, "feedback_message": None}
 
 
 def agent_rule_scorer_on_summary(state: LLMGraphState):
@@ -470,6 +448,11 @@ def agent_rule_scorer_on_summary(state: LLMGraphState):
     final_judgments = []
     is_positive_context = False
     is_negative_context = False
+
+    # 일관성 검사 헬퍼 함수
+    def is_inconsistent(verdict, score):
+        return (verdict == "긍정" and score < 0.0) or \
+               (verdict == "부정" and score > 0.0)
 
     for sentence in sentences:
         if sentence.strip() == "- 긍정적인 점:":
@@ -492,21 +475,65 @@ def agent_rule_scorer_on_summary(state: LLMGraphState):
         elif score < -0.1:
             verdict = "부정"
 
+        # 1차 일관성 검사
+        if is_inconsistent(verdict, score):
+            if state["log_details"]:
+                print(f"  [불일치 감지] 1차: {verdict} 문장이 {score:.2f} 점수. 재계산 시도.")
+            
+            # 재계산 시도
+            recalculated_score = scorer.score_sentence(sentence, is_positive_context=is_positive_context, is_negative_context=is_negative_context)
+            recalculated_verdict = "중립"
+            if recalculated_score > 0.1:
+                recalculated_verdict = "긍정"
+            elif recalculated_score < -0.1:
+                recalculated_verdict = "부정"
+            
+            # 재계산 후 2차 일관성 검사
+            if is_inconsistent(recalculated_verdict, recalculated_score):
+                feedback_msg = (
+                    f"LLM 요약 내용 중 감성 점수 불일치 발생: "
+                    f"'{sentence}' 문장은 {verdict}으로 요약되었으나, "
+                    f"점수는 {score:.2f}로 {recalculated_verdict}입니다. "
+                    f"해당 문장의 감성을 다시 평가하고, 감성 표현을 정확히 마킹하여 요약해주세요."
+                )
+                if state["log_details"]:
+                    print(f"  [불일치 지속] 2차: {recalculated_verdict} 문장이 {recalculated_score:.2f} 점수. LLM 재요약 요청.")
+                return {"feedback_message": feedback_msg, "re_summarize_count": state["re_summarize_count"] + 1}
+            else:
+                # 재계산으로 일관성 확보
+                score = recalculated_score
+                verdict = recalculated_verdict
+                if state["log_details"]:
+                    print(f"  [일관성 확보] 재계산 후: {verdict} 문장이 {score:.2f} 점수.")
+
         final_judgments.append(
             {"sentence": sentence, "final_verdict": verdict, "score": score}
         )
         if state["log_details"]:
             print(f"  [{verdict}] 점수: {score:.2f} | 문장: {sentence}")
 
-    return {"final_judgments": final_judgments}
+    return {"final_judgments": final_judgments, "feedback_message": None}
 
 
 # LLM 우선 워크플로우 정의
+def route_sentiment_analysis(state: LLMGraphState):
+    if state.get("feedback_message") and state.get("re_summarize_count", 0) < 3:
+        return "llm_summarizer"
+    else:
+        return "__end__"
+
 llm_workflow = StateGraph(LLMGraphState)
 llm_workflow.add_node("llm_summarizer", agent_llm_summarizer)
 llm_workflow.add_node("rule_scorer", agent_rule_scorer_on_summary)
 llm_workflow.add_edge("llm_summarizer", "rule_scorer")
-llm_workflow.add_edge("rule_scorer", END)
+llm_workflow.add_conditional_edges(
+    "rule_scorer",
+    route_sentiment_analysis,
+    {
+        "llm_summarizer": "llm_summarizer",
+        "__end__": END
+    }
+)
 llm_workflow.set_entry_point("llm_summarizer")
 app_llm_graph = llm_workflow.compile()
 
