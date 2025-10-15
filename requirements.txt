@@ -8,3 +8,8 @@ konlpy
 # LangGraph and related libraries
 langgraph
 langchain_core
+# Selenium for advanced scraping
+selenium
+webdriver-manager
+# LangChain for LLM calls
+langchain-google-genai
