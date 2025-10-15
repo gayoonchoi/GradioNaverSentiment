@@ -207,7 +207,9 @@ class SimpleScorer:
                     encoding="utf-8",
                 ) as f:
                     f.write(f"\n{phrase},{score}")
-                self.kb.idioms[phrase] = score
+                if phrase not in self.kb.idioms:
+                    self.kb.idioms[phrase] = []
+                self.kb.idioms[phrase].append(score)
                 return score
 
             # LLM이 새로운 증폭어를 학습시킨 경우
@@ -222,7 +224,9 @@ class SimpleScorer:
                     encoding="utf-8",
                 ) as f:
                     f.write(f"\n{phrase},{score}")
-                self.kb.amplifiers[phrase] = score
+                if phrase not in self.kb.amplifiers:
+                    self.kb.amplifiers[phrase] = []
+                self.kb.amplifiers[phrase].append(score)
                 return 0.0  # 이번 채점에는 반영 안함 (다음부터 적용)
 
             # LLM이 새로운 완화어를 학습시킨 경우
@@ -237,7 +241,9 @@ class SimpleScorer:
                     encoding="utf-8",
                 ) as f:
                     f.write(f"\n{phrase},{score}")
-                self.kb.downtoners[phrase] = score
+                if phrase not in self.kb.downtoners:
+                    self.kb.downtoners[phrase] = []
+                self.kb.downtoners[phrase].append(score)
                 return 0.0  # 이번 채점에는 반영 안함 (다음부터 적용)
 
             # LLM이 새로운 형용사를 학습시킨 경우
@@ -252,7 +258,9 @@ class SimpleScorer:
                     encoding="utf-8",
                 ) as f:
                     f.write(f"\n{phrase},{score}")
-                self.kb.adjectives[phrase] = score
+                if phrase not in self.kb.adjectives:
+                    self.kb.adjectives[phrase] = []
+                self.kb.adjectives[phrase].append(score)
                 return score
 
             # LLM이 새로운 부사를 학습시킨 경우
@@ -267,7 +275,9 @@ class SimpleScorer:
                     encoding="utf-8",
                 ) as f:
                     f.write(f"\n{phrase},{score}")
-                self.kb.adverbs[phrase] = score
+                if phrase not in self.kb.adverbs:
+                    self.kb.adverbs[phrase] = []
+                self.kb.adverbs[phrase].append(score)
                 return score
 
             # LLM이 새로운 감성 명사를 학습시킨 경우
@@ -282,7 +292,9 @@ class SimpleScorer:
                     encoding="utf-8",
                 ) as f:
                     f.write(f"\n{phrase},{score}")
-                self.kb.sentiment_nouns[phrase] = score
+                if phrase not in self.kb.sentiment_nouns:
+                    self.kb.sentiment_nouns[phrase] = []
+                self.kb.sentiment_nouns[phrase].append(score)
                 return score
 
             # LLM이 학습시킬 구절은 없지만, 문장 자체의 뉘앙스 점수를 반환한 경우
