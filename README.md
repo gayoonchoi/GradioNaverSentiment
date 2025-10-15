@@ -1,2 +1,104 @@
-# GradioNaverSentiment
-GradioNaverSentiment
+# 🚀 LLM 우선 네이버 블로그 감성 분석기 (GradioNaverSentiment)
+
+![Python](https://img.shields.io/badge/Python-3.9%2B-blue?style=flat-square&logo=python)
+![Gradio](https://img.shields.io/badge/Gradio-4.0%2B-orange?style=flat-square&logo=gradio)
+![LangChain](https://img.shields.io/badge/LangChain-0.1%2B-green?style=flat-square&logo=langchain)
+![LangGraph](https://img.shields.io/badge/LangGraph-0.0%2B-red?style=flat-square&logo=langgraph)
+![Selenium](https://img.shields.io/badge/Selenium-4.0%2B-purple?style=flat-square&logo=selenium)
+![BeautifulSoup](https://img.shields.io/badge/BeautifulSoup-4.0%2B-lightgrey?style=flat-square&logo=beautifulsoup)
+
+## 🌟 프로젝트 소개
+
+이 프로젝트는 네이버 블로그 게시글의 감성을 분석하기 위한 지능형 애플리케이션입니다. 사용자가 입력한 키워드를 기반으로 네이버 블로그를 검색하고, 스크래핑한 블로그 본문의 감성을 분석하여 긍정/부정 비율 및 상세 분석 결과를 제공합니다. 특히, **LLM(Large Language Model)을 우선적으로 활용하는 새로운 아키텍처**를 도입하여 문맥과 의도를 더욱 정확하게 파악하며, 동적으로 감성 사전을 확장하는 학습 기능을 포함하고 있습니다.
+
+## ✨ 주요 기능
+
+1.  **네이버 블로그 검색 및 스크래핑**:
+    *   사용자 키워드에 따라 네이버 검색 API를 통해 관련 블로그 게시글을 검색합니다.
+    *   Selenium과 BeautifulSoup을 활용하여 블로그 본문 내용을 안정적으로 스크래핑합니다.
+2.  **LLM 우선 감성 분석 아키텍처**:
+    *   **핵심 경험 요약 (LLM Summarizer)**: 블로그 본문에서 LLM이 핵심적인 긍정/부정 경험을 요약합니다. 이때 강조어, 완화어, 부정어 등 감성 강도에 영향을 미치는 표현들을 보존하여 요약합니다.
+    *   **요약 기반 규칙 채점 (Rule Scorer)**: LLM이 요약한 내용을 바탕으로 규칙 기반의 감성 점수를 계산합니다.
+3.  **동적 감성 사전 학습**:
+    *   분석 과정에서 기존 사전에 없는 새로운 감성 표현(관용어, 형용사, 부사, 명사)이 발견되면, LLM에 질의하여 해당 표현의 감성 점수를 추론합니다.
+    *   추론된 점수는 해당 카테고리의 CSV 파일(`idioms.csv`, `adjectives.csv`, `adverbs.csv`, `sentiment_nouns.csv`)에 자동으로 저장되어 감성 사전을 지속적으로 확장하고 분석 정확도를 높입니다.
+4.  **Gradio 웹 UI**:
+    *   직관적인 웹 인터페이스를 통해 키워드 입력, 분석 시작, 결과 확인(데이터프레임, URL 리스트, 상세 문장 분석)을 쉽게 할 수 있습니다.
+    *   페이지네이션 기능을 통해 많은 분석 결과도 효율적으로 탐색할 수 있습니다.
+
+## 🏗️ 아키텍처 설명
+
+이 프로젝트는 `LangGraph`를 활용하여 에이전트 기반의 워크플로우를 구축했습니다.
+
+### LLM 우선 감성 분석 워크플로우 (`app_llm.py`)
+
+이 아키텍처는 LLM의 강력한 문맥 이해 능력을 최대한 활용하여 블로그 본문의 핵심 감성을 먼저 파악한 후, 규칙 기반 시스템으로 정량적인 점수를 부여합니다.
+
+```mermaid
+graph TD
+    A[시작] --> B(LLM Summarizer: 블로그 본문 핵심 경험 요약);
+    B --> C(Rule Scorer: 요약된 문장 감성 점수 계산);
+    C --> D{새로운 감성 표현?};
+    D -- Yes --> E(LLM Dynamic Scorer: 점수 추론 및 사전 학습);
+    E --> C;
+    D -- No --> F[최종 감성 분석 결과];
+    C --> F;
+    F --> G[종료];
+```
+
+*   **LLM Summarizer**: 블로그 본문을 입력받아, `keyword`와 관련된 긍정적/부정적 핵심 경험을 요약합니다. 이때 감성 강도를 나타내는 표현들을 유지하도록 프롬프트가 설계되어 있습니다.
+*   **Rule Scorer**: LLM이 요약한 문장들을 개별적으로 분석하여 감성 점수를 계산합니다.
+    *   초기 점수는 문장의 긍정/부정 뉘앙스에 따라 0.3 또는 -0.3으로 설정됩니다.
+    *   기존 관용구 사전을 먼저 확인하여 점수를 부여합니다.
+    *   문장 내의 각 단어(형용사, 부사, 명사)에 대해 감성 사전을 확인하고, 사전에 없는 새로운 감성 표현은 LLM Dynamic Scorer에게 점수를 질의합니다.
+    *   마지막으로 강조어, 완화어, 부정어의 영향을 반영하여 최종 점수를 산출합니다.
+*   **LLM Dynamic Scorer**: 새로운 감성 표현(관용어, 형용사, 부사, 명사)이 발견되면, LLM에게 해당 표현의 감성 점수를 추론하도록 요청합니다. 이때 점수 범위, 기존 사전의 예시, 품사 정보 등을 가이드로 제공하여 LLM이 일관되고 정확한 점수를 부여하도록 돕습니다. 추론된 점수는 해당 CSV 파일에 저장되어 사전을 확장합니다.
+
+## ⚙️ 설치 및 실행 방법
+
+### 1. 환경 설정
+
+프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 네이버 API 키를 설정합니다.
+
+```
+NAVER_CLIENT_ID=YOUR_NAVER_CLIENT_ID
+NAVER_CLIENT_SECRET=YOUR_NAVER_CLIENT_SECRET
+GOOGLE_API_KEY=YOUR_GOOGLE_API_KEY
+```
+
+*   `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`: 네이버 개발자 센터에서 발급받은 검색 API 키입니다.
+*   `GOOGLE_API_KEY`: Google Gemini API 사용을 위한 키입니다.
+
+### 2. 의존성 설치
+
+Python 3.9 이상 환경에서 다음 명령어를 실행하여 필요한 라이브러리들을 설치합니다.
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. 애플리케이션 실행
+
+LLM 우선 감성 분석기를 실행합니다.
+
+```bash
+python app_llm.py
+```
+
+터미널에 출력되는 URL(일반적으로 `http://127.0.0.1:7860`)로 접속하여 웹 UI를 사용할 수 있습니다.
+
+## 🚀 활용 방법
+
+1.  **키워드 입력**: 웹 UI의 "검색어" 입력창에 분석하고자 하는 키워드(예: `제주도 핫플`, `서울 축제`)를 입력합니다.
+2.  **분석 시작**: "분석 시작" 버튼을 클릭하면 네이버 블로그 검색, 스크래핑, 감성 분석 과정이 진행됩니다.
+3.  **결과 확인**:
+    *   **분석 상태**: 현재 진행 상황을 실시간으로 확인할 수 있습니다.
+    *   **수집된 전체 URL 리스트**: 분석에 사용된 블로그 게시글의 제목과 링크를 확인할 수 있습니다.
+    *   **개별 블로그 분석 결과**: 각 블로그별 긍정/부정/중립 문장 수, 긍정 비율, 그리고 긍정/부정 문장 요약이 표 형태로 제공됩니다. 페이지네이션을 통해 여러 블로그의 결과를 탐색할 수 있습니다.
+4.  **동적 사전 학습의 이점**:
+    *   애플리케이션을 사용하면서 LLM이 새로운 감성 표현을 학습하고 CSV 파일에 저장하므로, 시간이 지남에 따라 분석 정확도가 향상됩니다.
+    *   특히 신조어나 특정 분야의 감성 표현에 대한 대응력이 높아집니다.
+
+## 📝 라이선스
+
+이 프로젝트는 MIT 라이선스를 따릅니다. 자세한 내용은 `LICENSE` 파일을 참조하십시오.
