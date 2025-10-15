@@ -277,55 +277,114 @@ class SimpleScorer:
         elif is_negative_context:
             final_score = -0.3
 
-        # ****로 감싸진 핵심 감성 표현 추출
-        marked_phrases = re.findall(r'\*\*\*\*([^*]+)\*\*\*\*', sentence)
-        negation_factor = 1
+        # ****로 감싸진 핵심 감성 표현 및 수식어구 추출
+        # 그룹 1: ****로 감싸진 구문, 그룹 2: (수식어구: ...) 안의 내용 (있을 경우)
+        marked_phrases_with_modifiers = re.findall(r'\*\*\*\*([^*]+)\*\*\*\*(?:\(수식어구:\s*([^\)]+)\))?', sentence)
 
-        for phrase in marked_phrases:
+        positive_contribution = 0.0
+        negative_contribution = 0.0
+
+        # 수식어구에 의해 수정될 수 있는 감성 단어들의 점수를 임시 저장
+        # {수식어구: 점수}
+        modified_word_scores = {}
+
+        # 1차 처리: 감성 단어들의 점수를 먼저 계산하고 저장
+        for phrase, modifier_target in marked_phrases_with_modifiers:
             phrase = phrase.strip()
+            modifier_target = modifier_target.strip() if modifier_target else None
 
-            # 2. 기존 관용구로 점수 확인 (가장 높은 우선순위)
+            # 강조어/완화어/부정어는 1차 처리에서 건너뛰고, 감성 단어만 처리
+            if phrase in self.kb.amplifiers or \
+               phrase in self.kb.downtoners or \
+               phrase in self.kb.negators:
+                continue
+
+            current_phrase_score = 0.0
             if phrase in self.kb.idioms:
-                final_score += self.kb.idioms[phrase]
-                continue
+                current_phrase_score = self.kb.idioms[phrase]
+            else:
+                words_in_phrase = self.okt.pos(phrase, norm=True, stem=True)
+                for word, tag in words_in_phrase:
+                    word_score = 0.0
+                    if tag.startswith("Adjective"):
+                        if word in self.kb.adjectives:
+                            word_score = self.kb.adjectives[word]
+                        else:
+                            llm_score = self.get_dynamic_score(word, expected_tag=tag)
+                            word_score = llm_score
+                    elif tag.startswith("Adverb"):
+                        if word in self.kb.adverbs:
+                            word_score = self.kb.adverbs[word]
+                        else:
+                            llm_score = self.get_dynamic_score(word, expected_tag=tag)
+                            word_score = llm_score
+                    elif tag.startswith("Noun"):
+                        if word in self.kb.sentiment_nouns:
+                            word_score = self.kb.sentiment_nouns[word]
+                        else:
+                            llm_score = self.get_dynamic_score(word, expected_tag=tag)
+                            word_score = llm_score
+                    current_phrase_score += word_score
 
-            # 3. 강조/완화/부정어 적용
+            if modifier_target:
+                modified_word_scores[modifier_target] = current_phrase_score
+            else:
+                # 수식어구가 없는 감성 단어는 바로 기여도에 추가
+                if current_phrase_score > 0:
+                    positive_contribution += current_phrase_score
+                elif current_phrase_score < 0:
+                    negative_contribution += current_phrase_score
+
+        # 2차 처리: 강조어/완화어/부정어 적용
+        negation_factor = 1
+        for phrase, modifier_target in marked_phrases_with_modifiers:
+            phrase = phrase.strip()
+            modifier_target = modifier_target.strip() if modifier_target else None
+
             if phrase in self.kb.amplifiers:
-                final_score *= self.kb.amplifiers[phrase]
-                continue
+                multiplier = self.kb.amplifiers[phrase]
+                if modifier_target and modifier_target in modified_word_scores:
+                    score_to_modify = modified_word_scores[modifier_target]
+                    modified_word_scores[modifier_target] = score_to_modify * multiplier
+                # else: 연결된 수식어구가 없으면 효과를 적용하지 않음 (사용자 요청)
             elif phrase in self.kb.downtoners:
-                final_score *= self.kb.downtoners[phrase]
-                continue
+                multiplier = self.kb.downtoners[phrase]
+                if modifier_target and modifier_target in modified_word_scores:
+                    score_to_modify = modified_word_scores[modifier_target]
+                    modified_word_scores[modifier_target] = score_to_modify * multiplier
+                # else: 연결된 수식어구가 없으면 효과를 적용하지 않음 (사용자 요청)
             elif phrase in self.kb.negators:
-                negation_factor *= -1
-                continue
+                if modifier_target and modifier_target in modified_word_scores:
+                    score_to_modify = modified_word_scores[modifier_target]
+                    modified_word_scores[modifier_target] = score_to_modify * -1
+                # else: 연결된 수식어구가 없으면 효과를 적용하지 않음 (사용자 요청)
 
-            # 4. 단어별 감성 점수 누적 및 학습 (형용사, 부사, 명사)
-            words_in_phrase = self.okt.pos(phrase, norm=True, stem=True)
-            for word, tag in words_in_phrase:
-                current_word_score = 0.0
-                if tag.startswith("Adjective"):
-                    if word in self.kb.adjectives:
-                        current_word_score = self.kb.adjectives[word]
-                    else:
-                        llm_score = self.get_dynamic_score(word, expected_tag=tag)
-                        current_word_score = llm_score
-                elif tag.startswith("Adverb"):
-                    if word in self.kb.adverbs:
-                        current_word_score = self.kb.adverbs[word]
-                    else:
-                        llm_score = self.get_dynamic_score(word, expected_tag=tag)
-                        current_word_score = llm_score
-                elif tag.startswith("Noun"):
-                    if word in self.kb.sentiment_nouns:
-                        current_word_score = self.kb.sentiment_nouns[word]
-                    else:
-                        llm_score = self.get_dynamic_score(word, expected_tag=tag)
-                        current_word_score = llm_score
+        # 3차 처리: 수정된 감성 단어 점수들을 최종 기여도에 합산
+        for target, score in modified_word_scores.items():
+            if score > 0:
+                positive_contribution += score
+            elif score < 0:
+                negative_contribution += score
 
-                final_score += current_word_score
+        # 4. 최종적으로 전체 부정 계수 적용 (연결되지 않은 부정어의 경우)
+        # 사용자 요청에 따라, 연결되지 않은 부정어는 전체 기여도에 영향을 미치지 않음.
+        # 따라서 이 부분은 제거하거나, negation_factor를 1로 유지.
+        # 현재 코드에서는 negation_factor가 1로 초기화되고, 연결된 부정어만 처리하므로 이 줄은 필요 없음.
+        # positive_contribution *= negation_factor
+        # negative_contribution *= negation_factor
 
-        return final_score * negation_factor
+        # 5. 최종 점수 합산
+        final_score += positive_contribution
+        final_score += negative_contribution
+
+        # Fallback: If score is 0.0 but context is positive/negative, apply base score
+        if final_score == 0.0:
+            if is_positive_context:
+                final_score = 0.3
+            elif is_negative_context:
+                final_score = -0.3
+
+        return final_score
 
 
 # --- LLM 우선 아키텍처를 위한 LangGraph 상태 및 에이전트 ---
@@ -351,8 +410,9 @@ def agent_llm_summarizer(state: LLMGraphState):
 
         본문 전체를 읽고, 글쓴이가 '{keyword}'와 관련하여 경험한 내용 전체에 대한 '긍정적인 점'과 '부정적인 점'을 각각 글머리 기호(bullet points) 형식으로 요약해주세요.
 
-        [매우 중요] 요약할 때, 글쓴이의 감성(긍정/부정)을 명확하게 증폭시키거나 반감시키는 핵심적인 표현(명사, 형용사, 부사, 관용구 등)이 있다면, 해당 표현을 ****로 감싸서 표시해주세요.
-        예시: "이 축제는 ****정말**** ****환상적****이었어요." 또는 "음식이 ****너무**** ****별로****였어요."
+        [매우 중요] 요약할 때, 글쓴이의 감성(긍정/부정)을 명확하게 증폭시키거나 반감시키는 **강조어, 완화어, 부정어**와 같은 핵심적인 표현이 있다면, 해당 표현을 ****로 감싸서 표시해주세요. 이때, 해당 표현이 어떤 긍정/부정 단어 또는 구문에 영향을 미치는지 명확하다면, 그 뒤에 (수식어구: [영향을 미치는 긍정/부정 단어 또는 구문]) 형식으로 괄호 안에 명시해주세요.
+        명사, 형용사, 부사, 관용어와 같은 감성 단어는 ****로 감싸기만 하고, (수식어구: ...)를 붙이지 마세요.
+        예시: "이 축제는 ****정말****(수식어구: 환상적)이었어요." 또는 "음식이 ****너무****(수식어구: 별로)였어요." 그리고 "불꽃놀이는 ****황홀****했어요."
         - ****는 감성 강도에 명확하게 영향을 미치는 표현에만 사용해야 합니다.
         - 감성 강도에 영향을 미치지 않는 일반적인 단어에는 ****를 사용하지 마세요.
 
@@ -372,7 +432,12 @@ def agent_llm_summarizer(state: LLMGraphState):
         - 부정적인 점:
           - (여기에 부정적인 경험 요약)
 
-        다른 부가적인 설명 없이, 위 형식에 맞춰 요약만 제공해주세요.
+        다른 부가적인 설명 없이, 아래의 정확한 형식에 맞춰 요약만 제공해주세요.
+
+        - 긍정적인 점:
+          - (여기에 긍정적인 경험 요약)
+        - 부정적인 점:
+          - (여기에 부정적인 경험 요약)
 
         --- 블로그 본문 시작 ---
         {text}
