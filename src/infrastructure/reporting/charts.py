@@ -68,8 +68,9 @@ def create_stacked_bar_chart(total_pos: int, total_neg: int, title: str, figsize
     ax.tick_params(axis='x', labelsize=8)
     ax.tick_params(axis='y', labelsize=10)
 
+    # 범례 위치와 여백을 조정하여 경고 메시지 해결
     handles, legend_labels = ax.get_legend_handles_labels()
-    ax.legend(handles[::-1], legend_labels[::-1], loc='upper center', bbox_to_anchor=(0.5, -0.3), ncol=2, frameon=False, fontsize=8)
+    ax.legend(handles[::-1], legend_labels[::-1], loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False, fontsize=8)
+    fig.subplots_adjust(bottom=0.35)
 
-    plt.tight_layout(pad=2.5)
     return fig
