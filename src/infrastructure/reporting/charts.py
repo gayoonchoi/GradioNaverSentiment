@@ -27,7 +27,7 @@ def create_donut_chart(total_pos: int, total_neg: int, title: str) -> Figure | N
 
     labels = ['긍정', '부정']
     sizes = [pos_perc, neg_perc]
-    colors = ['#3498db', '#e74c3c']
+    colors = ['#5463FF', '#FF1818']
     explode = (0.05, 0)
 
     wedges, texts, autotexts = ax.pie(sizes, explode=explode, labels=None, autopct='%1.1f%%',
@@ -41,10 +41,12 @@ def create_donut_chart(total_pos: int, total_neg: int, title: str) -> Figure | N
               bbox_to_anchor=(1, 0, 0.5, 1))
 
     plt.setp(autotexts, size=10, weight="bold", color="white")
+    # 범례가 잘리지 않도록 오른쪽 여백을 조정합니다.
+    fig.subplots_adjust(right=0.7)
     plt.tight_layout()
     return fig
 
-def create_stacked_bar_chart(total_pos: int, total_neg: int, title: str, figsize=(6, 1.5)) -> Figure | None:
+def create_stacked_bar_chart(total_pos: int, total_neg: int, title: str, figsize=(6, 2.0)) -> Figure | None: # 높이를 약간 늘려 공간 확보
     total = total_pos + total_neg
     if total == 0:
         return None
@@ -58,8 +60,8 @@ def create_stacked_bar_chart(total_pos: int, total_neg: int, title: str, figsize
     pos_data = [pos_perc]
     neg_data = [neg_perc]
 
-    ax.barh(labels, pos_data, color='#3498db', edgecolor='white', height=0.3, label=f'긍정 ({pos_perc:.1f}%)')
-    ax.barh(labels, neg_data, left=pos_data, color='#e74c3c', edgecolor='white', height=0.3, label=f'부정 ({neg_perc:.1f}%)')
+    ax.barh(labels, pos_data, color='#5463FF', edgecolor='white', height=0.3, label=f'긍정 ({pos_perc:.1f}%)')
+    ax.barh(labels, neg_data, left=pos_data, color='#FF1818', edgecolor='white', height=0.3, label=f'부정 ({neg_perc:.1f}%)')
 
     ax.set_xlabel('비율 (%)', fontsize=9)
     ax.set_title(f'{title} 긍정/부정 비율', fontsize=12)
@@ -68,9 +70,9 @@ def create_stacked_bar_chart(total_pos: int, total_neg: int, title: str, figsize
     ax.tick_params(axis='x', labelsize=8)
     ax.tick_params(axis='y', labelsize=10)
 
-    # 범례 위치와 여백을 조정하여 경고 메시지 해결
     handles, legend_labels = ax.get_legend_handles_labels()
     ax.legend(handles[::-1], legend_labels[::-1], loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False, fontsize=8)
-    fig.subplots_adjust(bottom=0.35)
-
+    
+    # tight_layout을 호출하여 전체적으로 레이아웃을 자동 조정합니다.
+    fig.tight_layout()
     return fig
