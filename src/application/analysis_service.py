@@ -144,7 +144,7 @@ def _perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_detail
         
         category_results.append({
             "축제명": festival_name, "긍정 문장 수": result["total_pos"], "부정 문장 수": result["total_neg"],
-            "긍정 비율 (%)": f"{(result["total_pos"] / (result["total_pos"] + result["total_neg"]) * 100):.1f}" if (result["total_pos"] + result["total_neg"]) > 0 else "0.0"
+            "긍정 비율 (%)": f"{(result['total_pos'] / (result['total_pos'] + result['total_neg']) * 100):.1f}" if (result['total_pos'] + result['total_neg']) > 0 else "0.0"
         })
         if not result["blog_results_df"].empty:
             all_blog_posts_list.append(result["blog_results_df"])

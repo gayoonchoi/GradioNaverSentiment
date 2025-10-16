@@ -102,7 +102,7 @@ def create_ui():
                 with gr.Row():
                     with gr.Column(scale=1):
                         keyword_input = gr.Textbox(label="검색어", placeholder="예: 제주도 핫플")
-                        num_reviews_input = gr.Slider(minimum=5, maximum=50, value=10, step=1, label="분석할 리뷰 수")
+                        num_reviews_input = gr.Slider(minimum=1, maximum=100, value=10, step=1, label="분석할 리뷰 수")
                         log_details_keyword = gr.Checkbox(label="상세 로그 출력", value=False)
                         analyze_button = gr.Button("분석 시작", variant="primary")
                     with gr.Column(scale=2):
@@ -116,7 +116,7 @@ def create_ui():
                     with gr.Column():
                         keyword_input_b = gr.Textbox(label="키워드 B", placeholder="예: 강릉 핫플")
                 with gr.Row():
-                    num_reviews_comp = gr.Slider(minimum=5, maximum=50, value=10, step=1, label="분석할 리뷰 수 (키워드별)")
+                    num_reviews_comp = gr.Slider(minimum=1, maximum=100, value=10, step=1, label="분석할 리뷰 수 (키워드별)")
                     log_details_comp = gr.Checkbox(label="상세 로그 출력", value=False)
                     compare_button = gr.Button("키워드 비교 분석 시작", variant="primary")
                 with gr.Row():
@@ -135,7 +135,7 @@ def create_ui():
                         cat1_dropdown = gr.Dropdown(label="대분류", choices=cat1_choices)
                         cat2_dropdown = gr.Dropdown(label="중분류", interactive=True)
                         cat3_dropdown = gr.Dropdown(label="소분류", interactive=True)
-                        category_num_reviews = gr.Slider(minimum=1, maximum=10, value=3, step=1, label="축제별 분석 리뷰 수")
+                        category_num_reviews = gr.Slider(minimum=1, maximum=100, value=3, step=1, label="축제별 분석 리뷰 수")
                         log_details_cat = gr.Checkbox(label="상세 로그 출력", value=False)
                         category_analyze_button = gr.Button("카테고리 분석 시작", variant="primary")
                     with gr.Column(scale=2):
@@ -160,7 +160,7 @@ def create_ui():
                         cat2_b_dropdown = gr.Dropdown(label="중분류 B", interactive=True)
                         cat3_b_dropdown = gr.Dropdown(label="소분류 B", interactive=True)
                 with gr.Row():
-                    compare_num_reviews = gr.Slider(minimum=1, maximum=10, value=3, step=1, label="축제별 분석 리뷰 수")
+                    compare_num_reviews = gr.Slider(minimum=1, maximum=100, value=3, step=1, label="축제별 분석 리뷰 수")
                     compare_log_checkbox = gr.Checkbox(label="상세 로그 출력", value=False)
                     compare_analyze_button = gr.Button("카테고리 비교 분석 시작", variant="primary")
                 with gr.Row():
