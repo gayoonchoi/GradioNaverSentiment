@@ -5,11 +5,27 @@
 
 
 
+
+
+
+
+
+
+
+
 import json
 
 
 
+
+
+
+
 import os
+
+
+
+
 
 
 
@@ -21,7 +37,11 @@ from functools import lru_cache
 
 
 
-# 축제 JSON 파일들이 있는 디렉토리
+
+
+
+
+
 
 
 
@@ -33,7 +53,11 @@ FESTIVALS_DIR = "C:\\Users\\SBA\\github\\GradioNaverSentiment\\festivals"
 
 
 
-# 새로운 파일명 목록
+
+
+
+
+
 
 
 
@@ -41,7 +65,15 @@ CATEGORY_FILES = [
 
 
 
+
+
+
+
     "festivals_type_도시와지역이벤트.json",
+
+
+
+
 
 
 
@@ -49,7 +81,15 @@ CATEGORY_FILES = [
 
 
 
+
+
+
+
     "festivals_type_산업과지식.json",
+
+
+
+
 
 
 
@@ -57,7 +97,15 @@ CATEGORY_FILES = [
 
 
 
+
+
+
+
     "festivals_type_전통과역사.json",
+
+
+
+
 
 
 
@@ -65,7 +113,15 @@ CATEGORY_FILES = [
 
 
 
+
+
+
+
     "festivals_type_체험과레저.json"
+
+
+
+
 
 
 
@@ -77,7 +133,19 @@ CATEGORY_FILES = [
 
 
 
+
+
+
+
+
+
+
+
 @lru_cache(maxsize=1)
+
+
+
+
 
 
 
@@ -85,19 +153,19 @@ def load_festival_data():
 
 
 
-    """새로운 파일명 규칙에 따라 여러 JSON 파일에서 축제 데이터를 로드하여 합칩니다."""
+
+
+
+
+    """각 파일이 대분류를 최상위 키로 갖는 구조에 맞춰 데이터를 로드하고 합칩니다."""
+
+
+
+
 
 
 
     combined_data = {}
-
-
-
-    prefix = "festivals_type_"
-
-
-
-    suffix = ".json"
 
 
 
@@ -109,26 +177,6 @@ def load_festival_data():
 
 
 
-        if filename.startswith(prefix) and filename.endswith(suffix):
-
-
-
-            category_name = filename[len(prefix):-len(suffix)]
-
-
-
-        else:
-
-
-
-            # 예외적인 파일명을 위한 처리
-
-
-
-            category_name = os.path.splitext(filename)[0]
-
-
-
 
 
 
@@ -137,7 +185,7 @@ def load_festival_data():
 
 
 
-        
+
 
 
 
@@ -145,11 +193,39 @@ def load_festival_data():
 
 
 
+
+
+
+
             with open(file_path, 'r', encoding='utf-8') as f:
 
 
 
-                combined_data[category_name] = json.load(f)
+
+
+
+
+                data_from_file = json.load(f)
+
+
+
+
+
+
+
+                # 각 파일의 딕셔너리를 바로 합칩니다.
+
+
+
+
+
+
+
+                combined_data.update(data_from_file)
+
+
+
+
 
 
 
@@ -157,11 +233,23 @@ def load_festival_data():
 
 
 
+
+
+
+
             print(f"Warning: Festival JSON file not found at {file_path}")
 
 
 
+
+
+
+
             continue
+
+
+
+
 
 
 
@@ -169,7 +257,15 @@ def load_festival_data():
 
 
 
+
+
+
+
             print(f"Warning: Could not decode JSON from {file_path}")
+
+
+
+
 
 
 
@@ -177,7 +273,15 @@ def load_festival_data():
 
 
 
+
+
+
+
             
+
+
+
+
 
 
 
@@ -189,7 +293,19 @@ def load_festival_data():
 
 
 
+
+
+
+
+
+
+
+
 def get_cat1_choices():
+
+
+
+
 
 
 
@@ -197,7 +313,15 @@ def get_cat1_choices():
 
 
 
+
+
+
+
     data = load_festival_data()
+
+
+
+
 
 
 
@@ -209,7 +333,19 @@ def get_cat1_choices():
 
 
 
+
+
+
+
+
+
+
+
 def get_cat2_choices(cat1: str):
+
+
+
+
 
 
 
@@ -217,7 +353,15 @@ def get_cat2_choices(cat1: str):
 
 
 
+
+
+
+
     if not cat1:
+
+
+
+
 
 
 
@@ -225,7 +369,15 @@ def get_cat2_choices(cat1: str):
 
 
 
+
+
+
+
     data = load_festival_data()
+
+
+
+
 
 
 
@@ -237,7 +389,19 @@ def get_cat2_choices(cat1: str):
 
 
 
+
+
+
+
+
+
+
+
 def get_cat3_choices(cat1: str, cat2: str):
+
+
+
+
 
 
 
@@ -245,7 +409,15 @@ def get_cat3_choices(cat1: str, cat2: str):
 
 
 
+
+
+
+
     if not cat1 or not cat2:
+
+
+
+
 
 
 
@@ -253,7 +425,15 @@ def get_cat3_choices(cat1: str, cat2: str):
 
 
 
+
+
+
+
     data = load_festival_data()
+
+
+
+
 
 
 
@@ -269,7 +449,23 @@ def get_cat3_choices(cat1: str, cat2: str):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 def get_festivals(cat1: str, cat2: str = None, cat3: str = None) -> list:
+
+
+
+
 
 
 
@@ -277,11 +473,23 @@ def get_festivals(cat1: str, cat2: str = None, cat3: str = None) -> list:
 
 
 
+
+
+
+
     data = load_festival_data()
 
 
 
+
+
+
+
     if not cat1:
+
+
+
+
 
 
 
@@ -293,7 +501,19 @@ def get_festivals(cat1: str, cat2: str = None, cat3: str = None) -> list:
 
 
 
+
+
+
+
+
+
+
+
     festivals = []
+
+
+
+
 
 
 
@@ -301,7 +521,15 @@ def get_festivals(cat1: str, cat2: str = None, cat3: str = None) -> list:
 
 
 
+
+
+
+
         # 대분류만 선택된 경우
+
+
+
+
 
 
 
@@ -309,7 +537,15 @@ def get_festivals(cat1: str, cat2: str = None, cat3: str = None) -> list:
 
 
 
+
+
+
+
             for cat3_data in cat2_data.values():
+
+
+
+
 
 
 
@@ -317,7 +553,15 @@ def get_festivals(cat1: str, cat2: str = None, cat3: str = None) -> list:
 
 
 
+
+
+
+
     elif cat1 and cat2 and not cat3:
+
+
+
+
 
 
 
@@ -325,7 +569,15 @@ def get_festivals(cat1: str, cat2: str = None, cat3: str = None) -> list:
 
 
 
+
+
+
+
         cat2_data = data.get(cat1, {}).get(cat2, {})
+
+
+
+
 
 
 
@@ -333,7 +585,15 @@ def get_festivals(cat1: str, cat2: str = None, cat3: str = None) -> list:
 
 
 
+
+
+
+
             festivals.extend(cat3_data)
+
+
+
+
 
 
 
@@ -341,7 +601,15 @@ def get_festivals(cat1: str, cat2: str = None, cat3: str = None) -> list:
 
 
 
+
+
+
+
         # 소분류까지 모두 선택된 경우
+
+
+
+
 
 
 
@@ -349,11 +617,27 @@ def get_festivals(cat1: str, cat2: str = None, cat3: str = None) -> list:
 
 
 
+
+
+
+
     
 
 
 
+
+
+
+
     return sorted(list(set(festivals))) # 중복 제거 후 정렬
+
+
+
+
+
+
+
+
 
 
 

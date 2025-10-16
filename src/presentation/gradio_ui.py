@@ -107,7 +107,47 @@ def create_ui():
                     ]
                 )
 
-            with gr.TabItem("키워드 비교 분석"):
-                gr.Markdown("비교 분석 기능은 현재 비활성화되어 있습니다. 카테고리별 분석 또는 단일 키워드 분석을 이용해주세요.")
+            with gr.TabItem("카테고리별 축제 비교 분석"):
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("### 그룹 A")
+                        cat1_a_dropdown = gr.Dropdown(label="대분류 A", choices=cat1_choices)
+                        cat2_a_dropdown = gr.Dropdown(label="중분류 A", interactive=True)
+                        cat3_a_dropdown = gr.Dropdown(label="소분류 A", interactive=True)
+                    with gr.Column():
+                        gr.Markdown("### 그룹 B")
+                        cat1_b_dropdown = gr.Dropdown(label="대분류 B", choices=cat1_choices)
+                        cat2_b_dropdown = gr.Dropdown(label="중분류 B", interactive=True)
+                        cat3_b_dropdown = gr.Dropdown(label="소분류 B", interactive=True)
+                
+                with gr.Row():
+                    compare_num_reviews = gr.Slider(minimum=1, maximum=10, value=3, step=1, label="축제별 분석 리뷰 수")
+                    compare_analyze_button = gr.Button("카테고리 비교 분석 시작", variant="primary")
+
+                with gr.Row():
+                    with gr.Column():
+                        compare_status_output_a = gr.Textbox(label="분석 상태 A", interactive=False)
+                        compare_combined_chart_a = gr.Plot(label="종합 분석 A")
+                        compare_individual_charts_a = gr.Plot(label="개별 분석 A")
+                    with gr.Column():
+                        compare_status_output_b = gr.Textbox(label="분석 상태 B", interactive=False)
+                        compare_combined_chart_b = gr.Plot(label="종합 분석 B")
+                        compare_individual_charts_b = gr.Plot(label="개별 분석 B")
+
+                # Dropdown 연동 로직 (A, B 그룹 모두에 적용)
+                cat1_a_dropdown.change(update_cat2_choices, inputs=cat1_a_dropdown, outputs=cat2_a_dropdown)
+                cat2_a_dropdown.change(update_cat3_choices, inputs=[cat1_a_dropdown, cat2_a_dropdown], outputs=cat3_a_dropdown)
+                cat1_b_dropdown.change(update_cat2_choices, inputs=cat1_b_dropdown, outputs=cat2_b_dropdown)
+                cat2_b_dropdown.change(update_cat3_choices, inputs=[cat1_b_dropdown, cat2_b_dropdown], outputs=cat3_b_dropdown)
+
+                # 분석 버튼 클릭 이벤트
+                compare_analyze_button.click(
+                    compare_categories,
+                    inputs=[cat1_a_dropdown, cat2_a_dropdown, cat3_a_dropdown, cat1_b_dropdown, cat2_b_dropdown, cat3_b_dropdown, compare_num_reviews],
+                    outputs=[
+                        compare_status_output_a, compare_combined_chart_a, compare_individual_charts_a,
+                        compare_status_output_b, compare_combined_chart_b, compare_individual_charts_b
+                    ]
+                )
 
     return demo

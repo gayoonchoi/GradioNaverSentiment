@@ -1,3 +1,4 @@
+
 import gradio as gr
 import pandas as pd
 import re
@@ -39,18 +40,11 @@ def get_season(postdate: str) -> str:
     else: return "겨울"
 
 def summarize_negative_feedback(sentences: list) -> str:
-    """LLM을 사용하여 부정적인 피드백 문장들을 요약합니다."""
     if not sentences:
         return ""
-    
     llm = get_llm_client(model="gemini-2.5-pro")
-    
-    # 중복 제거
     unique_sentences = sorted(list(set(sentences)), key=len, reverse=True)
-
-    # f-string 밖에서 문자열 결합 수행
     negative_feedback_str = "\n- ".join(unique_sentences)
-
     prompt = f'''
     아래는 서비스/장소에 대한 여러 블로그 리뷰에서 수집된 부정적인 의견들입니다. 
     이 의견들을 종합하여 사용자가 겪은 주요 불만 사항들을 1., 2., 3. ... 형식의 목록으로 요약해주세요.
@@ -63,7 +57,6 @@ def summarize_negative_feedback(sentences: list) -> str:
 
     [주요 불만 사항 요약]
     '''
-    
     try:
         response = llm.invoke(prompt)
         return response.content.strip()
@@ -84,10 +77,9 @@ def save_negative_summary_to_csv(summary_text: str, keyword: str) -> str:
     df.to_csv(csv_filepath, index=False, encoding='utf-8-sig')
     return csv_filepath
 
-def _analyze_single_festival(keyword: str, num_reviews: int, driver, progress: gr.Progress) -> dict:
-    """단일 키워드(축제)에 대한 감성 분석을 수행하고 결과 데이터를 반환합니다."""
+def _analyze_single_festival(keyword: str, num_reviews: int, driver) -> dict:
     search_keyword = f"{keyword} 후기"
-    max_candidates = max(20, num_reviews * 5) # 카테고리 분석 시에는 후보 수를 줄여 속도 향상
+    max_candidates = max(20, num_reviews * 5)
     candidate_blogs = []
     start_index = 1
     while len(candidate_blogs) < max_candidates and start_index <= 201:
@@ -108,8 +100,6 @@ def _analyze_single_festival(keyword: str, num_reviews: int, driver, progress: g
     
     for i, blog_data in enumerate(candidate_blogs):
         if len(valid_blogs_data) >= num_reviews: break
-        progress.update(desc=f"'{keyword}' 분석 중... ({len(valid_blogs_data)}/{num_reviews})")
-
         content = scrape_blog_content(driver, blog_data["link"])
         if "오류" in content or "찾을 수 없습니다" in content: continue
 
@@ -137,11 +127,56 @@ def _analyze_single_festival(keyword: str, num_reviews: int, driver, progress: g
         "chart": create_stacked_bar_chart(total_pos_sentences, total_neg_sentences, keyword)
     }
 
-def analyze_festivals_by_category(cat1, cat2, cat3, num_reviews, progress=gr.Progress(track_tqdm=True)):
+def _perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, progress, initial_progress, total_steps):
     festivals_to_analyze = festival_loader.get_festivals(cat1, cat2, cat3)
     if not festivals_to_analyze:
-        return "분석할 축제를 찾을 수 없습니다.", None, None
+        return {"error": "분석할 축제를 찾을 수 없습니다."}
 
+    all_results = []
+    total_festivals = len(festivals_to_analyze)
+    for i, festival_name in enumerate(festivals_to_analyze):
+        current_step_progress = (i + 1) / total_festivals
+        overall_progress = (initial_progress + current_step_progress) / total_steps
+        progress(overall_progress, desc=f"그룹 분석 중: {festival_name} ({i+1}/{total_festivals})")
+        
+        result = _analyze_single_festival(festival_name, num_reviews, driver)
+        if "error" not in result:
+            all_results.append(result)
+    
+    if not all_results:
+        return {"error": "모든 축제에 대한 유효한 리뷰를 찾지 못했습니다."}
+
+    combined_pos = sum(r["total_pos"] for r in all_results)
+    combined_neg = sum(r["total_neg"] for r in all_results)
+    individual_charts = [r["chart"] for r in all_results if r["chart"] is not None]
+
+    combined_chart = create_donut_chart(combined_pos, combined_neg, "카테고리 종합 분석")
+    individual_charts_image = create_composite_image(individual_charts, "축제별 개별 분석 결과")
+
+    status = f"총 {total_festivals}개 중 {len(all_results)}개 축제 분석 완료."
+    return {
+        "status": status,
+        "combined_chart": combined_chart,
+        "individual_charts_image": individual_charts_image
+    }
+
+def analyze_festivals_by_category(cat1, cat2, cat3, num_reviews, progress=gr.Progress(track_tqdm=True)):
+    num_reviews = int(num_reviews)
+    driver = None
+    try:
+        service = Service(ChromeDriverManager().install())
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        results = _perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, progress, 0, 1)
+        if "error" in results:
+            return results["error"], None, None
+        return results["status"], results["combined_chart"], results["individual_charts_image"]
+    finally:
+        if driver:
+            driver.quit()
+
+def compare_categories(cat1_a, cat2_a, cat3_a, cat1_b, cat2_b, cat3_b, num_reviews, progress=gr.Progress(track_tqdm=True)):
     num_reviews = int(num_reviews)
     driver = None
     try:
@@ -150,44 +185,20 @@ def analyze_festivals_by_category(cat1, cat2, cat3, num_reviews, progress=gr.Pro
         chrome_options.add_argument("--headless")
         driver = webdriver.Chrome(service=service, options=chrome_options)
 
-        all_results = []
-        total_festivals = len(festivals_to_analyze)
-        for i, festival_name in enumerate(festivals_to_analyze):
-            progress((i + 1) / total_festivals, desc=f"카테고리 분석 중: {festival_name}")
-            result = _analyze_single_festival(festival_name, num_reviews, driver, progress)
-            if "error" not in result:
-                all_results.append(result)
+        results_a = _perform_category_analysis(cat1_a, cat2_a, cat3_a, num_reviews, driver, progress, 0, 2)
+        results_b = _perform_category_analysis(cat1_b, cat2_b, cat3_b, num_reviews, driver, progress, 1, 2)
+
+        output_a = [results_a["status"], results_a["combined_chart"], results_a["individual_charts_image"]] if "error" not in results_a else [results_a["error"], None, None]
+        output_b = [results_b["status"], results_b["combined_chart"], results_b["individual_charts_image"]] if "error" not in results_b else [results_b["error"], None, None]
         
-        if not all_results:
-            return "모든 축제에 대한 유효한 리뷰를 찾지 못했습니다.", None, None
-
-        # 통합 결과 계산
-        combined_pos = sum(r["total_pos"] for r in all_results)
-        combined_neg = sum(r["total_neg"] for r in all_results)
-        
-        # 개별 차트 리스트
-        individual_charts = [r["chart"] for r in all_results if r["chart"] is not None]
-
-        # 통합 차트 생성
-        combined_chart = create_donut_chart(combined_pos, combined_neg, "카테고리 종합 분석")
-        
-        # 개별 차트 이미지 생성
-        individual_charts_image = create_composite_image(individual_charts, "축제별 개별 분석 결과")
-
-        status = f"총 {total_festivals}개 중 {len(all_results)}개 축제 분석 완료."
-        return status, combined_chart, individual_charts_image
-
+        return tuple(output_a + output_b)
     finally:
         if driver:
             driver.quit()
 
-# 기존 단일 분석 함수는 _analyze_single_festival을 호출하도록 수정
+# --- 기존 단일/비교 분석 함수 (현재 비활성화) ---
 def analyze_keyword_and_generate_report(keyword: str, num_reviews: int, progress=gr.Progress(track_tqdm=True)):
-    # 이 함수는 이제 단일 분석에 대한 전체 리포트를 생성합니다.
-    # _perform_analysis 로직을 여기에 통합하고, UI에 맞는 상세 출력을 생성합니다.
-    # 시간 관계상 기존 로직을 유지하되, 향후 _analyze_single_festival 기반으로 리팩토링 가능
     return ["이 기능은 현재 비활성화 상태입니다. 카테고리별 분석을 이용해주세요."] + [gr.update(visible=False)]*13
 
 def run_comparison_analysis(keyword_a: str, keyword_b: str, num_reviews: int, progress=gr.Progress(track_tqdm=True)):
-    progress(1, desc="비교 분석 기능은 현재 비활성화되어 있습니다.")
     return [gr.update()]*28
