@@ -13,3 +13,7 @@ selenium
 webdriver-manager
 # LangChain for LLM calls
 langchain-google-genai
+# For plotting
+matplotlib
+# For Word document generation
+python-docx
