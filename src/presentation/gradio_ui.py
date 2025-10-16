@@ -1,17 +1,60 @@
+
 import gradio as gr
-from src.application.analysis_service import analyze_keyword_and_generate_report, run_comparison_analysis, change_page
+import pandas as pd
+from src.application.analysis_service import (
+    analyze_keyword_and_generate_report, 
+    run_comparison_analysis, 
+    change_page,
+    analyze_festivals_by_category
+)
+from src.data import festival_loader
 
 def create_ui():
+    # UI가 로드될 때 한 번만 대분류 목록을 가져옵니다.
+    cat1_choices = festival_loader.get_cat1_choices()
+
     with gr.Blocks(theme=gr.themes.Soft()) as demo:
         gr.Markdown("## 🚀 LLM 우선 네이버 블로그 감성 분석기")
 
-        # State to hold the full dataframe for pagination
-        full_df_state = gr.State()
-        full_df_state_a = gr.State()
-        full_df_state_b = gr.State()
-
         with gr.Tabs():
+            with gr.TabItem("카테고리별 축제 분석"):
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown("분석하고 싶은 축제의 카테고리를 선택하세요.")
+                        cat1_dropdown = gr.Dropdown(label="대분류", choices=cat1_choices)
+                        cat2_dropdown = gr.Dropdown(label="중분류", interactive=True)
+                        cat3_dropdown = gr.Dropdown(label="소분류", interactive=True)
+                        category_num_reviews = gr.Slider(minimum=1, maximum=10, value=3, step=1, label="축제별 분석 리뷰 수")
+                        category_analyze_button = gr.Button("카테고리 분석 시작", variant="primary")
+                    with gr.Column(scale=2):
+                        category_status_output = gr.Textbox(label="분석 상태", interactive=False)
+                        gr.Markdown("### 카테고리 종합 분석 결과")
+                        category_combined_chart = gr.Plot()
+                        gr.Markdown("### 축제별 개별 분석 결과")
+                        category_individual_charts = gr.Plot()
+
+                # Dropdown 연동 로직
+                def update_cat2_choices(cat1):
+                    choices = festival_loader.get_cat2_choices(cat1)
+                    return gr.update(choices=choices, value=None)
+
+                def update_cat3_choices(cat1, cat2):
+                    choices = festival_loader.get_cat3_choices(cat1, cat2)
+                    return gr.update(choices=choices, value=None)
+
+                cat1_dropdown.change(update_cat2_choices, inputs=cat1_dropdown, outputs=cat2_dropdown)
+                cat2_dropdown.change(update_cat3_choices, inputs=[cat1_dropdown, cat2_dropdown], outputs=cat3_dropdown)
+
+                # 분석 버튼 클릭 이벤트
+                category_analyze_button.click(
+                    analyze_festivals_by_category,
+                    inputs=[cat1_dropdown, cat2_dropdown, cat3_dropdown, category_num_reviews],
+                    outputs=[category_status_output, category_combined_chart, category_individual_charts]
+                )
+
             with gr.TabItem("단일 키워드 분석"):
+                # 기존 단일 키워드 분석 UI (수정됨)
+                full_df_state = gr.State()
                 with gr.Row():
                     with gr.Column(scale=1):
                         keyword_input = gr.Textbox(label="검색어", placeholder="예: 제주도 핫플")
@@ -54,9 +97,9 @@ def create_ui():
                         autumn_chart_output, 
                         winter_chart_output,
                         download_output,
-                        results_output, # Paginated results
+                        results_output,
                         url_output,
-                        full_df_state, # Full results for state
+                        full_df_state,
                         page_num_input,
                         total_pages_output,
                         negative_summary_output,
@@ -65,6 +108,6 @@ def create_ui():
                 )
 
             with gr.TabItem("키워드 비교 분석"):
-                gr.Markdown("비교 분석 기능은 현재 비활성화되어 있습니다. 단일 키워드 분석을 이용해주세요.")
+                gr.Markdown("비교 분석 기능은 현재 비활성화되어 있습니다. 카테고리별 분석 또는 단일 키워드 분석을 이용해주세요.")
 
     return demo
