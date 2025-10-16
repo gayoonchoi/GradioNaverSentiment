@@ -159,7 +159,7 @@ class SimpleScorer:
             final_score = -0.3
 
         marked_phrases_with_modifiers = re.findall(
-            r"\*\*\*\*([^*]+)\*\*\*\*(?:(수식어구:\s*([^\)]+)))?", sentence
+            r"\*\*\*\*([^*]+?)\*\*\*\*(?:\(수식어구:\s*([^)]+?)\))?", sentence
         )
 
         positive_contribution = 0.0
