@@ -5,7 +5,8 @@ from src.application.analysis_service import (
     analyze_keyword_and_generate_report, 
     run_comparison_analysis, 
     change_page,
-    analyze_festivals_by_category
+    analyze_festivals_by_category,
+    compare_categories
 )
 from src.data import festival_loader
 
