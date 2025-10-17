@@ -189,7 +189,7 @@ def _create_driver():
     return webdriver.Chrome(service=service, options=chrome_options)
 
 def _package_keyword_results(results: dict, name: str):
-    if "error" in results: return [results["error"]] + [gr.update(visible=False)] * 17
+    if "error" in results: return [results["error"]] + [gr.update(visible=False)] * 18
 
     neg_summary_text = summarize_negative_feedback(results["negative_sentences"])
 
@@ -212,10 +212,14 @@ def _package_keyword_results(results: dict, name: str):
     }])
     summary_csv = save_df_to_csv(summary_df, "overall_summary", name)
 
-    # 2. 개별 블로그 목록 CSV 생성
-    blog_list_csv = save_df_to_csv(results["blog_results_df"], "blog_list", name)
+    # 2. 개별 블로그 목록 CSV 생성 (요약 내용은 축약)
+    blog_df_for_csv = results["blog_results_df"].copy()
+    blog_df_for_csv['긍/부정 문장 요약'] = blog_df_for_csv['긍/부정 문장 요약'].str.slice(0, 50) + '...더보기'
+    blog_list_csv = save_df_to_csv(blog_df_for_csv, "blog_list", name)
 
-    initial_page_df, _, total_pages_str = change_page(results["blog_results_df"], 1)
+    # UI에 표시될 DataFrame에서는 요약 열을 제외합니다.
+    df_for_display = results["blog_results_df"].drop(columns=['긍/부정 문장 요약'])
+    initial_page_df, _, total_pages_str = change_page(df_for_display, 1)
 
     return (
         results["status"],
@@ -235,7 +239,8 @@ def _package_keyword_results(results: dict, name: str):
         total_pages_str,
         gr.update(value=blog_list_csv, visible=blog_list_csv is not None),
         gr.update(visible=False), # 개별 블로그 도넛 차트 초기화
-        gr.update(visible=False)  # 개별 블로그 점수 차트 초기화
+        gr.update(visible=False),  # 개별 블로그 점수 차트 초기화
+        gr.update(visible=False) # 개별 블로그 요약 초기화
     )
 
 def analyze_keyword_and_generate_report(keyword: str, num_reviews: int, log_details: bool, progress=gr.Progress(track_tqdm=True)):
