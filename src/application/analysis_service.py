@@ -47,7 +47,7 @@ def save_df_to_csv(df: pd.DataFrame, base_name: str, keyword: str) -> str:
 
 def summarize_negative_feedback(sentences: list) -> str:
     if not sentences: return ""
-    llm = get_llm_client(model="gemini-1.5-pro-latest")
+    llm = get_llm_client(model="gemini-2.5-pro")
     unique_sentences = sorted(list(set(sentences)), key=len, reverse=True)
     negative_feedback_str = "\n- ".join(unique_sentences)
     prompt = f'''[수집된 부정적인 의견]\n- {negative_feedback_str}\n\n[요청] 위 의견들을 종합하여 주요 불만 사항을 1., 2., 3. ... 형식의 목록으로 요약해주세요.'''
@@ -236,6 +236,7 @@ def _package_keyword_results(results: dict, name: str):
     df_for_display = results["blog_results_df"].drop(columns=['긍/부정 문장 요약'])
     initial_page_df, _, total_pages_str = change_page(df_for_display, 1)
 
+    # [수정됨] Accordion을 위한 반환값을 하나 추가하여 총 20개로 맞춤
     return (
         results["status"],
         results["url_markdown"],
@@ -253,10 +254,10 @@ def _package_keyword_results(results: dict, name: str):
         1,
         total_pages_str,
         gr.update(value=blog_list_csv, visible=blog_list_csv is not None),
-        gr.update(visible=False),
-        gr.update(visible=False),
-        gr.update(visible=False),
-        gr.update(visible=False)
+        gr.update(visible=False), # individual_donut_chart
+        gr.update(visible=False), # individual_score_chart
+        gr.update(visible=False), # individual_summary_output
+        gr.update(visible=False)  # blog_detail_accordion
     )
 
 def package_festival_details(results: dict, name: str):
@@ -284,7 +285,6 @@ def package_festival_details(results: dict, name: str):
 def _package_category_results(results: dict, name: str):
     if "error" in results: return [results["error"]] + [gr.update(visible=False)] * 33
 
-    # Tier 1: 카테고리 전체 요약
     cat_neg_summary_text = summarize_negative_feedback(results["negative_sentences"])
     cat_overall_summary_text = f"""
 - **긍정 문장 수**: {results['total_pos']}개
@@ -304,12 +304,10 @@ def _package_category_results(results: dict, name: str):
     }])
     cat_overall_csv = save_df_to_csv(summary_df, "category_summary", name)
 
-    # Tier 2: 축제별 요약
     festival_df_for_csv = results["individual_festival_results_df"].copy()
     festival_list_csv = save_df_to_csv(festival_df_for_csv, "festival_summary", name)
     festival_page_df, _, festival_pages_str = change_page(results["individual_festival_results_df"], 1)
 
-    # Tier 3: 전체 블로그 목록
     all_blogs_df = results["all_blog_posts_df"]
     blog_df_for_csv = all_blogs_df.copy()
     if not blog_df_for_csv.empty:
@@ -320,7 +318,6 @@ def _package_category_results(results: dict, name: str):
     blog_page_df, _, blog_pages_str = change_page(df_for_display, 1)
 
     return (
-        # Tier 1
         results["status"],
         gr.update(value=cat_neg_summary_text, visible=bool(cat_neg_summary_text)),
         gr.update(value=create_donut_chart(results["total_pos"], results["total_neg"], f'{name} 종합 분석'), visible=True),
@@ -330,24 +327,20 @@ def _package_category_results(results: dict, name: str):
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["여름"]["pos"], results["seasonal_data"]["여름"]["neg"], "여름 시즌"), visible=results["seasonal_data"]["여름"]["pos"] > 0 or results["seasonal_data"]["여름"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["가을"]["pos"], results["seasonal_data"]["가을"]["neg"], "가을 시즌"), visible=results["seasonal_data"]["가을"]["pos"] > 0 or results["seasonal_data"]["가을"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["겨울"]["pos"], results["seasonal_data"]["겨울"]["neg"], "겨울 시즌"), visible=results["seasonal_data"]["겨울"]["pos"] > 0 or results["seasonal_data"]["겨울"]["neg"] > 0),
-        # Tier 2
         festival_page_df,
         results["individual_festival_results_df"],
         results["festival_full_results"],
         1,
         festival_pages_str,
         gr.update(value=festival_list_csv, visible=festival_list_csv is not None),
-        # Tier 2 Details (initially hidden)
         gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
         gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
-        # Tier 3
         blog_page_df,
         all_blogs_df,
         results["all_blog_judgments"],
         1,
         blog_pages_str,
         gr.update(value=all_blogs_list_csv, visible=all_blogs_list_csv is not None),
-        # Tier 3 Details (initially hidden)
         gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
     )
 

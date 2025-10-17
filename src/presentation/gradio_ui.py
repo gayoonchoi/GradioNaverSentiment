@@ -1,4 +1,3 @@
-
 import gradio as gr
 import pandas as pd
 from src.application.analysis_service import (
@@ -16,35 +15,47 @@ def create_ui():
     cat1_choices = festival_loader.get_cat1_choices()
 
     # --- Event Handlers ---
-    def update_individual_charts(evt: gr.SelectData, df: pd.DataFrame, judgments_list: list):
+
+    # [수정] 모든 블로그 표 클릭을 처리하는 통합 핸들러
+    # 페이지네이션을 고려하여 실제 인덱스를 계산하고, Accordion을 포함한 4개 출력을 반환
+    def update_individual_charts(evt: gr.SelectData, df_full: pd.DataFrame, judgments_list: list, page_num: int):
         if not evt.value or not judgments_list:
-            return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
-        
-        # df는 페이지네이션된 상태일 수 있으므로, evt.index[0]는 현재 페이지의 인덱스입니다.
-        # 전체 데이터에 대한 실제 인덱스를 찾아야 하지만, 여기서는 UI에 표시된 데이터를 기준으로 합니다.
-        # 이 방식은 페이지네이션 시 문제가 될 수 있으므로, 전체 데이터셋을 기준으로 하는 것이 더 안정적입니다.
-        # 하지만 현재 구조에서는 df가 전체 데이터셋(blog_results_df)이므로 문제가 없습니다.
-        selected_row = df.iloc[evt.index[0]]
+            return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+
+        PAGE_SIZE = 10
+        # 페이지 번호와 클릭 위치를 조합하여 전체 데이터에서의 실제 인덱스 계산
+        actual_index = (int(page_num) - 1) * PAGE_SIZE + evt.index[0]
+
+        if actual_index >= len(df_full):
+            return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+
+        selected_row = df_full.iloc[actual_index]
         blog_title = selected_row["블로그 제목"]
         pos_count = selected_row["긍정 문장 수"]
         neg_count = selected_row["부정 문장 수"]
         summary_text = selected_row["긍/부정 문장 요약"].replace('*', '').replace('---', '')
+        judgments = judgments_list[actual_index]
         
-        # judgments_list에서 올바른 judgment를 찾습니다.
-        # blog_results_df와 judgments_list는 순서가 같다고 가정합니다.
-        judgments = judgments_list[evt.index[0]]
         score_chart = create_sentence_score_bar_chart(judgments, f'{blog_title[:20]}... 문장별 점수')
         donut_chart = create_donut_chart(pos_count, neg_count, f'{blog_title[:20]}... 긍/부정 비율')
         
-        return gr.update(value=donut_chart, visible=True), gr.update(value=score_chart, visible=True), gr.update(value=summary_text, visible=True)
+        # Accordion을 열어주는 4번째 반환값 추가
+        return gr.update(value=donut_chart, visible=True), gr.update(value=score_chart, visible=True), gr.update(value=summary_text, visible=True), gr.update(open=True, visible=True)
 
-    def update_festival_detail_charts(evt: gr.SelectData, df: pd.DataFrame, festival_full_results: list):
+    # [수정] 축제 표 클릭 핸들러에도 페이지네이션 인덱스 계산 로직 추가
+    def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, festival_full_results: list, page_num: int):
         if not evt.value or not festival_full_results:
             return [gr.update(visible=False)] * 8
 
-        selected_row = df.iloc[evt.index[0]]
+        PAGE_SIZE = 10
+        actual_index = (int(page_num) - 1) * PAGE_SIZE + evt.index[0]
+        
+        if actual_index >= len(df_full):
+            return [gr.update(visible=False)] * 8
+
+        selected_row = df_full.iloc[actual_index]
         festival_name = selected_row["축제명"]
-        selected_festival_result = festival_full_results[evt.index[0]]
+        selected_festival_result = festival_full_results[actual_index]
         
         return package_festival_details(selected_festival_result, festival_name)
 
@@ -83,7 +94,13 @@ def create_ui():
                     individual_score_chart = gr.Plot(label="문장별 감성 점수", visible=False)
 
             blog_page_num_input.submit(change_page, inputs=[blog_results_df, blog_page_num_input], outputs=[blog_results_output, blog_page_num_input, blog_total_pages_output])
-            blog_results_output.select(update_individual_charts, inputs=[blog_results_df, blog_judgments_state], outputs=[individual_donut_chart, individual_score_chart, individual_summary_output])
+            
+            # [수정] 이벤트 연결부에 페이지 번호(blog_page_num_input)를 전달하고, 출력 개수를 4개로 맞춤
+            blog_results_output.select(
+                update_individual_charts, 
+                inputs=[blog_results_df, blog_judgments_state, blog_page_num_input], 
+                outputs=[individual_donut_chart, individual_score_chart, individual_summary_output, blog_detail_accordion]
+            )
 
         return [
             status_output, url_output, negative_summary_output,
@@ -95,7 +112,6 @@ def create_ui():
 
     def create_category_analysis_outputs():
         with gr.Blocks():
-            # Tier 1: 카테고리 종합 분석
             status_output = gr.Textbox(label="분석 상태", interactive=False)
             with gr.Accordion("카테고리 종합 분석 결과", open=True):
                 cat_negative_summary_output = gr.Markdown(label="주요 불만 사항 요약", visible=False)
@@ -111,7 +127,6 @@ def create_ui():
                         cat_autumn_chart_output = gr.Plot(label="가을 시즌", visible=False)
                         cat_winter_chart_output = gr.Plot(label="겨울 시즌", visible=False)
 
-            # Tier 2: 축제별 요약 및 상세 분석
             gr.Markdown("### 축제별 요약 결과")
             festival_results_df = gr.State()
             festival_full_results_state = gr.State()
@@ -134,7 +149,6 @@ def create_ui():
                         fest_autumn_chart_output = gr.Plot(label="가을 시즌", visible=False)
                         fest_winter_chart_output = gr.Plot(label="겨울 시즌", visible=False)
 
-            # Tier 3: 전체 블로그 상세 결과 및 개별 블로그 상세 분석
             gr.Markdown("### 전체 블로그 상세 결과")
             all_blogs_df = gr.State()
             all_blog_judgments_state = gr.State()
@@ -150,7 +164,6 @@ def create_ui():
                     individual_donut_chart = gr.Plot(label="개별 블로그 긍/부정 비율", visible=False)
                     individual_score_chart = gr.Plot(label="문장별 감성 점수", visible=False)
 
-            # --- Event Handlers for Category Tab ---
             festival_page_num_input.submit(change_page, inputs=[festival_results_df, festival_page_num_input], outputs=[festival_results_output, festival_page_num_input, festival_total_pages_output])
             all_blogs_page_num_input.submit(change_page, inputs=[all_blogs_df, all_blogs_page_num_input], outputs=[all_blogs_output, all_blogs_page_num_input, all_blogs_total_pages_output])
             
@@ -158,29 +171,33 @@ def create_ui():
                 fest_negative_summary_output, fest_overall_chart_output, fest_overall_summary_text_output,
                 fest_spring_chart_output, fest_summer_chart_output, fest_autumn_chart_output, fest_winter_chart_output, festival_detail_accordion
             ]
-            festival_results_output.select(update_festival_detail_charts, inputs=[festival_results_df, festival_full_results_state], outputs=festival_detail_outputs)
+            # [수정] 축제 표 클릭 이벤트에도 페이지 번호(festival_page_num_input)를 전달
+            festival_results_output.select(
+                update_festival_detail_charts, 
+                inputs=[festival_results_df, festival_full_results_state, festival_page_num_input], 
+                outputs=festival_detail_outputs
+            )
             
             blog_detail_outputs = [individual_donut_chart, individual_score_chart, individual_summary_output, blog_detail_accordion]
-            all_blogs_output.select(update_individual_charts, inputs=[all_blogs_df, all_blog_judgments_state], outputs=blog_detail_outputs)
+            # [수정] 블로그 표 클릭 이벤트에도 페이지 번호(all_blogs_page_num_input)를 전달
+            all_blogs_output.select(
+                update_individual_charts, 
+                inputs=[all_blogs_df, all_blog_judgments_state, all_blogs_page_num_input], 
+                outputs=blog_detail_outputs
+            )
 
         return [
-            # Tier 1
             status_output, cat_negative_summary_output, cat_overall_chart_output, cat_overall_summary_text_output, cat_overall_csv_output,
             cat_spring_chart_output, cat_summer_chart_output, cat_autumn_chart_output, cat_winter_chart_output,
-            # Tier 2
             festival_results_output, festival_results_df, festival_full_results_state, festival_page_num_input, festival_total_pages_output, festival_list_csv_output,
-            # Tier 2 Details
             fest_negative_summary_output, fest_overall_chart_output, fest_overall_summary_text_output,
             fest_spring_chart_output, fest_summer_chart_output, fest_autumn_chart_output, fest_winter_chart_output, festival_detail_accordion,
-            # Tier 3
             all_blogs_output, all_blogs_df, all_blog_judgments_state, all_blogs_page_num_input, all_blogs_total_pages_output, all_blogs_list_csv_output,
-            # Tier 3 Details
             individual_donut_chart, individual_score_chart, individual_summary_output, blog_detail_accordion
         ]
 
     with gr.Blocks(theme=gr.themes.Soft()) as demo:
         gr.Markdown("## 🚀 LLM 우선 네이버 블로그 감성 분석기")
-
         with gr.Tabs():
             with gr.TabItem("단일 키워드 분석"):
                 with gr.Row():
@@ -224,7 +241,6 @@ def create_ui():
                         category_analyze_button = gr.Button("카테고리 분석 시작", variant="primary")
                     with gr.Column(scale=2):
                         category_outputs = create_category_analysis_outputs()
-
                 def update_cat2_choices(cat1): return gr.update(choices=festival_loader.get_cat2_choices(cat1), value=None)
                 def update_cat3_choices(cat1, cat2): return gr.update(choices=festival_loader.get_cat3_choices(cat1, cat2), value=None)
                 cat1_dropdown.change(update_cat2_choices, inputs=cat1_dropdown, outputs=cat2_dropdown)

@@ -2,7 +2,10 @@ import json
 import os
 from functools import lru_cache
 
-FESTIVALS_DIR = "C:\\Users\\SBA\\github\\GradioNaverSentiment\\festivals"
+# 현재 파일의 위치를 기준으로 프로젝트 루트 디렉토리를 계산합니다.
+# (src/data/festival_loader.py -> src/data -> src -> GradioNaverSentiment)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+FESTIVALS_DIR = os.path.join(PROJECT_ROOT, "festivals")
 
 CATEGORY_FILES = [
     "festivals_type_도시와지역이벤트.json",
