@@ -63,6 +63,7 @@ def _analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_de
     search_keyword = f"{keyword} 후기"
     max_candidates = max(50, num_reviews * 8)
     candidate_blogs, blog_results_list, all_negative_sentences = [], [], []
+    blog_judgments_list = []  # 각 블로그의 judgments를 저장할 리스트
     total_pos, total_neg, total_searched, start_index = 0, 0, 0, 1
     total_strong_pos, total_strong_neg = 0, 0  # 전체 강력 긍/부정 개수
     seasonal_data = {"봄": {"pos": 0, "neg": 0}, "여름": {"pos": 0, "neg": 0}, "가을": {"pos": 0, "neg": 0}, "겨울": {"pos": 0, "neg": 0}}
@@ -91,6 +92,7 @@ def _analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_de
         if not final_state.get("is_relevant"): continue
 
         judgments = final_state.get("final_judgments", [])
+        blog_judgments_list.append(judgments)
         pos_count = sum(1 for res in judgments if res["final_verdict"] == "긍정")
         neg_count = sum(1 for res in judgments if res["final_verdict"] == "부정")
         
@@ -131,7 +133,9 @@ def _analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_de
         "total_sentiment_frequency": total_sentiment_frequency,
         "total_sentiment_score": total_sentiment_score,
         "seasonal_data": seasonal_data,
-        "negative_sentences": all_negative_sentences, "blog_results_df": pd.DataFrame(blog_results_list),
+        "negative_sentences": all_negative_sentences, 
+        "blog_results_df": pd.DataFrame(blog_results_list),
+        "blog_judgments": blog_judgments_list,
         "url_markdown": f"### 분석된 블로그 URL ({len(valid_blogs_data)}개)\n" + "\n".join([f"- [{b['title']}]({b['link']})" for b in valid_blogs_data])
     }
 
@@ -185,7 +189,7 @@ def _create_driver():
     return webdriver.Chrome(service=service, options=chrome_options)
 
 def _package_keyword_results(results: dict, name: str):
-    if "error" in results: return [results["error"]] + [gr.update(visible=False)] * 14
+    if "error" in results: return [results["error"]] + [gr.update(visible=False)] * 17
 
     neg_summary_text = summarize_negative_feedback(results["negative_sentences"])
 
@@ -226,9 +230,12 @@ def _package_keyword_results(results: dict, name: str):
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["겨울"]["pos"], results["seasonal_data"]["겨울"]["neg"], "겨울 시즌"), visible=results["seasonal_data"]["겨울"]["pos"] > 0 or results["seasonal_data"]["겨울"]["neg"] > 0),
         initial_page_df,
         results["blog_results_df"],
+        results["blog_judgments"],
         1,
         total_pages_str,
-        gr.update(value=blog_list_csv, visible=blog_list_csv is not None)
+        gr.update(value=blog_list_csv, visible=blog_list_csv is not None),
+        gr.update(visible=False), # 개별 블로그 도넛 차트 초기화
+        gr.update(visible=False)  # 개별 블로그 점수 차트 초기화
     )
 
 def analyze_keyword_and_generate_report(keyword: str, num_reviews: int, log_details: bool, progress=gr.Progress(track_tqdm=True)):

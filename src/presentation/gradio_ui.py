@@ -1,4 +1,3 @@
-
 import gradio as gr
 import pandas as pd
 from src.application.analysis_service import (
@@ -9,9 +8,26 @@ from src.application.analysis_service import (
     change_page
 )
 from src.data import festival_loader
+from src.infrastructure.reporting.charts import create_donut_chart, create_sentence_score_bar_chart
 
 def create_ui():
     cat1_choices = festival_loader.get_cat1_choices()
+
+    def update_individual_charts(evt: gr.SelectData, df: pd.DataFrame, judgments_list: list):
+        if not evt.value:
+            return gr.update(visible=False), gr.update(visible=False)
+        
+        selected_row = df.iloc[evt.index[0]]
+        blog_title = selected_row["블로그 제목"]
+        pos_count = selected_row["긍정 문장 수"]
+        neg_count = selected_row["부정 문장 수"]
+        
+        donut_chart = create_donut_chart(pos_count, neg_count, f'{blog_title[:20]}... 긍/부정 비율')
+        
+        judgments = judgments_list[evt.index[0]]
+        score_chart = create_sentence_score_bar_chart(judgments, f'{blog_title[:20]}... 문장별 점수')
+        
+        return gr.update(value=donut_chart, visible=True), gr.update(value=score_chart, visible=True)
 
     def create_keyword_analysis_outputs():
         """키워드 분석 탭을 위한 상세 결과 UI 컴포넌트 그룹을 생성합니다."""
@@ -34,18 +50,27 @@ def create_ui():
             
             gr.Markdown("### 개별 블로그 분석 결과")
             blog_results_df = gr.State()
-            blog_results_output = gr.DataFrame(headers=["블로그 제목", "링크", "감성 빈도", "감성 점수", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)", "부정 비율 (%)", "긍/부정 문장 요약"], label="개별 블로그 분석 결과", wrap=True)
+            blog_judgments_state = gr.State()
+            blog_results_output = gr.DataFrame(headers=["블로그 제목", "링크", "감성 빈도", "감성 점수", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)", "부정 비율 (%)", "긍/부정 문장 요약"], label="개별 블로그 분석 결과", wrap=True, interactive=True)
             with gr.Row():
                 blog_page_num_input = gr.Number(value=1, label="페이지 번호", interactive=True, scale=1)
                 blog_total_pages_output = gr.Textbox(value="/ 1", label="전체 페이지", interactive=False, scale=1)
                 blog_list_csv_output = gr.File(label="전체 블로그 목록(CSV) 다운로드", visible=False, scale=2)
+            
+            with gr.Accordion("개별 블로그 상세 분석 (표에서 행 선택)", open=False, visible=True):
+                with gr.Row():
+                    individual_donut_chart = gr.Plot(label="개별 블로그 긍/부정 비율", visible=False)
+                    individual_score_chart = gr.Plot(label="문장별 감성 점수", visible=False)
+
             blog_page_num_input.submit(change_page, inputs=[blog_results_df, blog_page_num_input], outputs=[blog_results_output, blog_page_num_input, blog_total_pages_output])
+            blog_results_output.select(update_individual_charts, inputs=[blog_results_df, blog_judgments_state], outputs=[individual_donut_chart, individual_score_chart])
 
         return [
             status_output, url_output, negative_summary_output,
             overall_chart_output, overall_summary_text_output, overall_csv_output,
             spring_chart_output, summer_chart_output, autumn_chart_output, winter_chart_output,
-            blog_results_output, blog_results_df, blog_page_num_input, blog_total_pages_output, blog_list_csv_output
+            blog_results_output, blog_results_df, blog_judgments_state, blog_page_num_input, blog_total_pages_output, blog_list_csv_output,
+            individual_donut_chart, individual_score_chart
         ]
 
     def create_category_analysis_outputs():

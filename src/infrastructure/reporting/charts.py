@@ -76,3 +76,33 @@ def create_stacked_bar_chart(total_pos: int, total_neg: int, title: str, figsize
     # tight_layout을 호출하여 전체적으로 레이아웃을 자동 조정합니다.
     fig.tight_layout()
     return fig
+
+def create_sentence_score_bar_chart(judgments: list, title: str) -> Figure | None:
+    if not judgments:
+        return None
+
+    sentences = [j['sentence'][:30] + '...' if len(j['sentence']) > 30 else j['sentence'] for j in judgments]
+    scores = [j['score'] for j in judgments]
+    
+    colors = ['#5463FF' if s > 0 else '#FF1818' for s in scores]
+
+    # 차트의 높이를 동적으로 조절
+    height = max(4, len(sentences) * 0.5)
+    fig, ax = plt.subplots(figsize=(8, height))
+
+    y_pos = range(len(sentences))
+    ax.barh(y_pos, scores, color=colors, align='center')
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(sentences, fontsize=9)
+    ax.invert_yaxis()  # labels read top-to-bottom
+    ax.set_xlabel('감성 점수', fontsize=10)
+    ax.set_title(title, fontsize=14, pad=15)
+
+    # 점수 표시
+    for i, score in enumerate(scores):
+        ax.text(score + (0.01 if score >= 0 else -0.01), i, f'{score:.2f}', 
+                va='center', ha='left' if score >= 0 else 'right', fontsize=8)
+
+    plt.grid(axis='x', linestyle='--', alpha=0.6)
+    plt.tight_layout()
+    return fig
