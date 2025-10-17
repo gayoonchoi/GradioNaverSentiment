@@ -64,6 +64,7 @@ def _analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_de
     max_candidates = max(50, num_reviews * 8)
     candidate_blogs, blog_results_list, all_negative_sentences = [], [], []
     total_pos, total_neg, total_searched, start_index = 0, 0, 0, 1
+    total_strong_pos, total_strong_neg = 0, 0  # 전체 강력 긍/부정 개수
     seasonal_data = {"봄": {"pos": 0, "neg": 0}, "여름": {"pos": 0, "neg": 0}, "가을": {"pos": 0, "neg": 0}, "겨울": {"pos": 0, "neg": 0}}
     
     while len(candidate_blogs) < max_candidates and start_index <= 901:
@@ -93,26 +94,43 @@ def _analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_de
         pos_count = sum(1 for res in judgments if res["final_verdict"] == "긍정")
         neg_count = sum(1 for res in judgments if res["final_verdict"] == "부정")
         
+        strong_pos_count = sum(1 for res in judgments if res["final_verdict"] == "긍정" and res["score"] >= 1.0)
+        strong_neg_count = sum(1 for res in judgments if res["final_verdict"] == "부정" and res["score"] < -1.0)
+
         total_pos += pos_count
         total_neg += neg_count
+        total_strong_pos += strong_pos_count
+        total_strong_neg += strong_neg_count
         all_negative_sentences.extend([res["sentence"] for res in judgments if res["final_verdict"] == "부정"])
         
         season = get_season(blog_data['postdate'])
         seasonal_data[season]["pos"] += pos_count
         seasonal_data[season]["neg"] += neg_count
         
+        sentiment_frequency = pos_count + neg_count
+        sentiment_score = ((strong_pos_count + strong_neg_count) / sentiment_frequency * 100) if sentiment_frequency > 0 else 0
+
         blog_results_list.append({
-            "블로그 제목": blog_data["title"], "링크": blog_data["link"], "긍정 문장 수": pos_count, "부정 문장 수": neg_count,
-            "긍정 비율 (%)": f"{(pos_count/(pos_count+neg_count)*100):.1f}" if (pos_count+neg_count) > 0 else "0.0",
+            "블로그 제목": blog_data["title"], "링크": blog_data["link"], 
+            "감성 빈도": sentiment_frequency, "감성 점수": f"{sentiment_score:.1f}",
+            "긍정 문장 수": pos_count, "부정 문장 수": neg_count,
+            "긍정 비율 (%)": f"{(pos_count/sentiment_frequency*100):.1f}" if sentiment_frequency > 0 else "0.0",
+            "부정 비율 (%)": f"{(neg_count/sentiment_frequency*100):.1f}" if sentiment_frequency > 0 else "0.0",
             "긍/부정 문장 요약": "\n---\n".join([f"[{res['final_verdict']}] {res['sentence']}" for res in judgments])
         })
         valid_blogs_data.append(blog_data)
 
     if not valid_blogs_data: return {"error": f"'{keyword}'에 대한 유효한 후기 블로그를 찾지 못했습니다."}
 
+    total_sentiment_frequency = total_pos + total_neg
+    total_sentiment_score = ((total_strong_pos + total_strong_neg) / total_sentiment_frequency * 100) if total_sentiment_frequency > 0 else 0
+
     return {
         "status": f"총 {total_searched}개 중 {len(candidate_blogs)}개 후보 확인, {len(valid_blogs_data)}개 블로그 최종 분석 완료.",
-        "total_pos": total_pos, "total_neg": total_neg, "seasonal_data": seasonal_data,
+        "total_pos": total_pos, "total_neg": total_neg, 
+        "total_sentiment_frequency": total_sentiment_frequency,
+        "total_sentiment_score": total_sentiment_score,
+        "seasonal_data": seasonal_data,
         "negative_sentences": all_negative_sentences, "blog_results_df": pd.DataFrame(blog_results_list),
         "url_markdown": f"### 분석된 블로그 URL ({len(valid_blogs_data)}개)\n" + "\n".join([f"- [{b['title']}]({b['link']})" for b in valid_blogs_data])
     }
@@ -167,14 +185,30 @@ def _create_driver():
     return webdriver.Chrome(service=service, options=chrome_options)
 
 def _package_keyword_results(results: dict, name: str):
-    if "error" in results: return [results["error"]] + [gr.update(visible=False)] * 16
+    if "error" in results: return [results["error"]] + [gr.update(visible=False)] * 14
 
     neg_summary_text = summarize_negative_feedback(results["negative_sentences"])
-    neg_summary_csv = save_df_to_csv(pd.DataFrame(re.findall(r"^\d+\.\s*(.*)", neg_summary_text, re.MULTILINE), columns=["주요 불만 사항"]), "negative_summary", name)
-    overall_df = pd.DataFrame([{'긍정': results["total_pos"], '부정': results["total_neg"]}])
-    overall_csv = save_df_to_csv(overall_df, "overall_summary", name)
-    seasonal_df = pd.DataFrame(results["seasonal_data"]).T.reset_index().rename(columns={'index': '계절'})
-    seasonal_csv = save_df_to_csv(seasonal_df, "seasonal_summary", name)
+
+    # 종합 분석 데이터 생성
+    overall_summary_text = f"""- **긍정 문장 수**: {results['total_pos']}개
+- **부정 문장 수**: {results['total_neg']}개
+- **감성어 빈도 (긍정+부정)**: {results['total_sentiment_frequency']}개
+- **감성 점수**: {results['total_sentiment_score']:.1f}점"""
+
+    # 1. 전체 후기 요약 CSV 생성
+    summary_df = pd.DataFrame([{
+        '검색어': name,
+        '감성 빈도': results['total_sentiment_frequency'],
+        '감성 점수': f"{results['total_sentiment_score']:.1f}",
+        '긍정 문장 수': results["total_pos"], 
+        '부정 문장 수': results["total_neg"],
+        '긍정 비율 (%)': f"{(results['total_pos'] / results['total_sentiment_frequency'] * 100):.1f}" if results['total_sentiment_frequency'] > 0 else "0.0",
+        '부정 비율 (%)': f"{(results['total_neg'] / results['total_sentiment_frequency'] * 100):.1f}" if results['total_sentiment_frequency'] > 0 else "0.0",
+        '주요 불만 사항 요약': neg_summary_text
+    }])
+    summary_csv = save_df_to_csv(summary_df, "overall_summary", name)
+
+    # 2. 개별 블로그 목록 CSV 생성
     blog_list_csv = save_df_to_csv(results["blog_results_df"], "blog_list", name)
 
     initial_page_df, _, total_pages_str = change_page(results["blog_results_df"], 1)
@@ -183,14 +217,13 @@ def _package_keyword_results(results: dict, name: str):
         results["status"],
         results["url_markdown"],
         gr.update(value=neg_summary_text, visible=bool(neg_summary_text)),
-        gr.update(value=neg_summary_csv, visible=neg_summary_csv is not None),
         gr.update(value=create_donut_chart(results["total_pos"], results["total_neg"], f'{name} 전체 후기 요약'), visible=True),
-        gr.update(value=overall_csv, visible=overall_csv is not None),
+        gr.update(value=overall_summary_text, visible=True),
+        gr.update(value=summary_csv, visible=summary_csv is not None),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["봄"]["pos"], results["seasonal_data"]["봄"]["neg"], "봄 시즌"), visible=results["seasonal_data"]["봄"]["pos"] > 0 or results["seasonal_data"]["봄"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["여름"]["pos"], results["seasonal_data"]["여름"]["neg"], "여름 시즌"), visible=results["seasonal_data"]["여름"]["pos"] > 0 or results["seasonal_data"]["여름"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["가을"]["pos"], results["seasonal_data"]["가을"]["neg"], "가을 시즌"), visible=results["seasonal_data"]["가을"]["pos"] > 0 or results["seasonal_data"]["가을"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["겨울"]["pos"], results["seasonal_data"]["겨울"]["neg"], "겨울 시즌"), visible=results["seasonal_data"]["겨울"]["pos"] > 0 or results["seasonal_data"]["겨울"]["neg"] > 0),
-        gr.update(value=seasonal_csv, visible=seasonal_csv is not None),
         initial_page_df,
         results["blog_results_df"],
         1,

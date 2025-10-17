@@ -20,10 +20,10 @@ def create_ui():
             url_output = gr.Markdown(label="수집된 전체 URL 리스트")
             with gr.Accordion("종합 분석 결과", open=True):
                 negative_summary_output = gr.Markdown(label="주요 불만 사항 요약", visible=False)
-                negative_download_output = gr.File(label="부정적 의견 요약(CSV) 다운로드", visible=False)
                 with gr.Row():
-                    overall_chart_output = gr.Plot(label="전체 후기 요약", visible=False, scale=2)
-                    overall_csv_output = gr.File(label="종합 데이터(CSV) 다운로드", visible=False, scale=1)
+                    overall_chart_output = gr.Plot(label="전체 후기 요약", visible=False)
+                    overall_summary_text_output = gr.Markdown(label="종합 분석 상세", visible=False)
+                    overall_csv_output = gr.File(label="전체 후기 요약 (CSV) 다운로드", visible=False)
                 with gr.Accordion("계절별 상세 분석", open=False):
                     with gr.Row():
                         spring_chart_output = gr.Plot(label="봄 시즌", visible=False)
@@ -31,11 +31,10 @@ def create_ui():
                     with gr.Row():
                         autumn_chart_output = gr.Plot(label="가을 시즌", visible=False)
                         winter_chart_output = gr.Plot(label="겨울 시즌", visible=False)
-                    seasonal_csv_output = gr.File(label="계절별 데이터(CSV) 다운로드", visible=False)
             
             gr.Markdown("### 개별 블로그 분석 결과")
             blog_results_df = gr.State()
-            blog_results_output = gr.DataFrame(headers=["블로그 제목", "링크", "긍정 문장 수", "부정 문장 수", "중립 문장 수", "긍정 비율 (%)", "긍/부정 문장 요약"], label="개별 블로그 분석 결과", wrap=True)
+            blog_results_output = gr.DataFrame(headers=["블로그 제목", "링크", "감성 빈도", "감성 점수", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)", "부정 비율 (%)", "긍/부정 문장 요약"], label="개별 블로그 분석 결과", wrap=True)
             with gr.Row():
                 blog_page_num_input = gr.Number(value=1, label="페이지 번호", interactive=True, scale=1)
                 blog_total_pages_output = gr.Textbox(value="/ 1", label="전체 페이지", interactive=False, scale=1)
@@ -43,9 +42,9 @@ def create_ui():
             blog_page_num_input.submit(change_page, inputs=[blog_results_df, blog_page_num_input], outputs=[blog_results_output, blog_page_num_input, blog_total_pages_output])
 
         return [
-            status_output, url_output, negative_summary_output, negative_download_output,
-            overall_chart_output, overall_csv_output,
-            spring_chart_output, summer_chart_output, autumn_chart_output, winter_chart_output, seasonal_csv_output,
+            status_output, url_output, negative_summary_output,
+            overall_chart_output, overall_summary_text_output, overall_csv_output,
+            spring_chart_output, summer_chart_output, autumn_chart_output, winter_chart_output,
             blog_results_output, blog_results_df, blog_page_num_input, blog_total_pages_output, blog_list_csv_output
         ]
 
