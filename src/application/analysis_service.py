@@ -130,6 +130,7 @@ def _analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_de
     return {
         "status": f"총 {total_searched}개 중 {len(candidate_blogs)}개 후보 확인, {len(valid_blogs_data)}개 블로그 최종 분석 완료.",
         "total_pos": total_pos, "total_neg": total_neg, 
+        "total_strong_pos": total_strong_pos, "total_strong_neg": total_strong_neg,
         "total_sentiment_frequency": total_sentiment_frequency,
         "total_sentiment_score": total_sentiment_score,
         "seasonal_data": seasonal_data,
@@ -145,6 +146,7 @@ def _perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_detail
 
     category_results, all_blog_posts_list = [], []
     agg_pos, agg_neg = 0, 0
+    agg_strong_pos, agg_strong_neg = 0, 0
     agg_seasonal = {"봄": {"pos": 0, "neg": 0}, "여름": {"pos": 0, "neg": 0}, "가을": {"pos": 0, "neg": 0}, "겨울": {"pos": 0, "neg": 0}}
     agg_negative_sentences = []
 
@@ -159,6 +161,8 @@ def _perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_detail
 
         agg_pos += result["total_pos"]
         agg_neg += result["total_neg"]
+        agg_strong_pos += result["total_strong_pos"]
+        agg_strong_neg += result["total_strong_neg"]
         agg_negative_sentences.extend(result["negative_sentences"])
         for season, data in result["seasonal_data"].items():
             agg_seasonal[season]["pos"] += data["pos"]
@@ -173,9 +177,15 @@ def _perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_detail
 
     if not category_results: return {"error": "모든 축제에 대한 유효한 리뷰를 찾지 못했습니다."}
 
+    total_sentiment_frequency = agg_pos + agg_neg
+    total_sentiment_score = ((agg_strong_pos + agg_strong_neg) / total_sentiment_frequency * 100) if total_sentiment_frequency > 0 else 0
+
     return {
         "status": f"총 {total_festivals}개 중 {len(category_results)}개 축제 분석 완료.",
-        "total_pos": agg_pos, "total_neg": agg_neg, "seasonal_data": agg_seasonal,
+        "total_pos": agg_pos, "total_neg": agg_neg, 
+        "total_sentiment_frequency": total_sentiment_frequency,
+        "total_sentiment_score": total_sentiment_score,
+        "seasonal_data": agg_seasonal,
         "negative_sentences": agg_negative_sentences,
         "individual_festival_results_df": pd.DataFrame(category_results),
         "all_blog_posts_df": pd.concat(all_blog_posts_list, ignore_index=True) if all_blog_posts_list else pd.DataFrame()
@@ -264,33 +274,45 @@ def run_comparison_analysis(keyword_a: str, keyword_b: str, num_reviews: int, lo
     finally:
         if driver: driver.quit()
 
-def _package_category_results(results, name):
-    if "error" in results: return [results["error"]] + [gr.update(visible=False)] * 19
+def _package_category_results(results: dict, name: str):
+    if "error" in results: return [results["error"]] + [gr.update(visible=False)] * 18
 
+    # 1. 종합 분석 데이터 생성
     neg_summary_text = summarize_negative_feedback(results["negative_sentences"])
-    
-    neg_summary_csv = save_df_to_csv(pd.DataFrame(re.findall(r"^\d+\.\s*(.*)", neg_summary_text, re.MULTILINE), columns=["주요 불만 사항"]), "negative_summary", name)
-    overall_df = pd.DataFrame([{'긍정': results["total_pos"], '부정': results["total_neg"]}])
-    overall_csv = save_df_to_csv(overall_df, "overall_summary", name)
-    seasonal_df = pd.DataFrame(results["seasonal_data"]).T.reset_index().rename(columns={'index': '계절'})
-    seasonal_csv = save_df_to_csv(seasonal_df, "seasonal_summary", name)
+    overall_summary_text = f"""- **긍정 문장 수**: {results['total_pos']}개
+- **부정 문장 수**: {results['total_neg']}개
+- **감성어 빈도 (긍정+부정)**: {results['total_sentiment_frequency']}개
+- **감성 점수**: {results['total_sentiment_score']:.1f}점"""
+
+    # 2. CSV 파일 생성
+    summary_df = pd.DataFrame([{
+        '카테고리': name,
+        '감성 빈도': results['total_sentiment_frequency'],
+        '감성 점수': f"{results['total_sentiment_score']:.1f}",
+        '긍정 문장 수': results["total_pos"], 
+        '부정 문장 수': results["total_neg"],
+        '긍정 비율 (%)': f"{(results['total_pos'] / results['total_sentiment_frequency'] * 100):.1f}" if results['total_sentiment_frequency'] > 0 else "0.0",
+        '부정 비율 (%)': f"{(results['total_neg'] / results['total_sentiment_frequency'] * 100):.1f}" if results['total_sentiment_frequency'] > 0 else "0.0",
+        '주요 불만 사항 요약': neg_summary_text
+    }])
+    overall_csv = save_df_to_csv(summary_df, "category_summary", name)
     festival_list_csv = save_df_to_csv(results["individual_festival_results_df"], "festival_summary", name)
     blog_list_csv = save_df_to_csv(results["all_blog_posts_df"], "all_blogs", name)
 
+    # 3. 테이블 페이지네이션 초기화
     festival_page_df, _, festival_pages_str = change_page(results["individual_festival_results_df"], 1)
     blog_page_df, _, blog_pages_str = change_page(results["all_blog_posts_df"], 1)
 
     return (
         results["status"],
         gr.update(value=neg_summary_text, visible=bool(neg_summary_text)),
-        gr.update(value=neg_summary_csv, visible=neg_summary_csv is not None),
         gr.update(value=create_donut_chart(results["total_pos"], results["total_neg"], f'{name} 종합 분석'), visible=True),
+        gr.update(value=overall_summary_text, visible=True),
         gr.update(value=overall_csv, visible=overall_csv is not None),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["봄"]["pos"], results["seasonal_data"]["봄"]["neg"], "봄 시즌"), visible=results["seasonal_data"]["봄"]["pos"] > 0 or results["seasonal_data"]["봄"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["여름"]["pos"], results["seasonal_data"]["여름"]["neg"], "여름 시즌"), visible=results["seasonal_data"]["여름"]["pos"] > 0 or results["seasonal_data"]["여름"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["가을"]["pos"], results["seasonal_data"]["가을"]["neg"], "가을 시즌"), visible=results["seasonal_data"]["가을"]["pos"] > 0 or results["seasonal_data"]["가을"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["겨울"]["pos"], results["seasonal_data"]["겨울"]["neg"], "겨울 시즌"), visible=results["seasonal_data"]["겨울"]["pos"] > 0 or results["seasonal_data"]["겨울"]["neg"] > 0),
-        gr.update(value=seasonal_csv, visible=seasonal_csv is not None),
         festival_page_df,
         results["individual_festival_results_df"],
         1,

@@ -1,3 +1,4 @@
+
 import gradio as gr
 import pandas as pd
 from src.application.analysis_service import (
@@ -79,12 +80,12 @@ def create_ui():
         """카테고리 분석 탭을 위한 상세 결과 UI 컴포넌트 그룹을 생성합니다."""
         with gr.Blocks():
             status_output = gr.Textbox(label="분석 상태", interactive=False)
-            with gr.Accordion("종합 분석 결과", open=True):
+            with gr.Accordion("카테고리 종합 분석 결과", open=True):
                 negative_summary_output = gr.Markdown(label="주요 불만 사항 요약", visible=False)
-                negative_download_output = gr.File(label="부정적 의견 요약(CSV) 다운로드", visible=False)
                 with gr.Row():
-                    overall_chart_output = gr.Plot(label="전체 후기 요약", visible=False, scale=2)
-                    overall_csv_output = gr.File(label="종합 데이터(CSV) 다운로드", visible=False, scale=1)
+                    overall_chart_output = gr.Plot(label="카테고리 전체 후기 요약", visible=False)
+                    overall_summary_text_output = gr.Markdown(label="종합 분석 상세", visible=False)
+                    overall_csv_output = gr.File(label="카테고리 전체 요약 (CSV) 다운로드", visible=False)
                 with gr.Accordion("계절별 상세 분석", open=False):
                     with gr.Row():
                         spring_chart_output = gr.Plot(label="봄 시즌", visible=False)
@@ -92,7 +93,6 @@ def create_ui():
                     with gr.Row():
                         autumn_chart_output = gr.Plot(label="가을 시즌", visible=False)
                         winter_chart_output = gr.Plot(label="겨울 시즌", visible=False)
-                    seasonal_csv_output = gr.File(label="계절별 데이터(CSV) 다운로드", visible=False)
             
             gr.Markdown("### 축제별 요약 결과")
             festival_results_df = gr.State()
@@ -105,7 +105,7 @@ def create_ui():
 
             gr.Markdown("### 전체 블로그 상세 결과")
             all_blogs_df = gr.State()
-            all_blogs_output = gr.DataFrame(headers=["블로그 제목", "링크", "긍정 문장 수", "부정 문장 수", "중립 문장 수", "긍정 비율 (%)", "긍/부정 문장 요약"], label="전체 블로그 분석 결과", wrap=True)
+            all_blogs_output = gr.DataFrame(headers=["블로그 제목", "링크", "감성 빈도", "감성 점수", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)", "부정 비율 (%)"], label="전체 블로그 분석 결과", wrap=True)
             with gr.Row():
                 all_blogs_page_num_input = gr.Number(value=1, label="페이지 번호", interactive=True, scale=1)
                 all_blogs_total_pages_output = gr.Textbox(value="/ 1", label="전체 페이지", interactive=False, scale=1)
@@ -113,9 +113,10 @@ def create_ui():
             all_blogs_page_num_input.submit(change_page, inputs=[all_blogs_df, all_blogs_page_num_input], outputs=[all_blogs_output, all_blogs_page_num_input, all_blogs_total_pages_output])
 
         return [
-            status_output, negative_summary_output, negative_download_output,
-            overall_chart_output, overall_csv_output,
-            spring_chart_output, summer_chart_output, autumn_chart_output, winter_chart_output, seasonal_csv_output,
+            status_output, 
+            negative_summary_output, 
+            overall_chart_output, overall_summary_text_output, overall_csv_output,
+            spring_chart_output, summer_chart_output, autumn_chart_output, winter_chart_output,
             festival_results_output, festival_results_df, festival_page_num_input, festival_total_pages_output, festival_list_csv_output,
             all_blogs_output, all_blogs_df, all_blogs_page_num_input, all_blogs_total_pages_output, all_blogs_list_csv_output
         ]
