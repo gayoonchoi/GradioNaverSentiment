@@ -6,7 +6,8 @@ from src.application.analysis_service import (
     run_comparison_analysis,
     analyze_festivals_by_category,
     compare_categories,
-    change_page
+    change_page,
+    package_festival_details
 )
 from src.data import festival_loader
 from src.infrastructure.reporting.charts import create_donut_chart, create_sentence_score_bar_chart
@@ -14,25 +15,41 @@ from src.infrastructure.reporting.charts import create_donut_chart, create_sente
 def create_ui():
     cat1_choices = festival_loader.get_cat1_choices()
 
+    # --- Event Handlers ---
     def update_individual_charts(evt: gr.SelectData, df: pd.DataFrame, judgments_list: list):
-        if not evt.value:
+        if not evt.value or not judgments_list:
             return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
         
+        # df는 페이지네이션된 상태일 수 있으므로, evt.index[0]는 현재 페이지의 인덱스입니다.
+        # 전체 데이터에 대한 실제 인덱스를 찾아야 하지만, 여기서는 UI에 표시된 데이터를 기준으로 합니다.
+        # 이 방식은 페이지네이션 시 문제가 될 수 있으므로, 전체 데이터셋을 기준으로 하는 것이 더 안정적입니다.
+        # 하지만 현재 구조에서는 df가 전체 데이터셋(blog_results_df)이므로 문제가 없습니다.
         selected_row = df.iloc[evt.index[0]]
         blog_title = selected_row["블로그 제목"]
         pos_count = selected_row["긍정 문장 수"]
         neg_count = selected_row["부정 문장 수"]
         summary_text = selected_row["긍/부정 문장 요약"].replace('*', '').replace('---', '')
         
-        donut_chart = create_donut_chart(pos_count, neg_count, f'{blog_title[:20]}... 긍/부정 비율')
-        
+        # judgments_list에서 올바른 judgment를 찾습니다.
+        # blog_results_df와 judgments_list는 순서가 같다고 가정합니다.
         judgments = judgments_list[evt.index[0]]
         score_chart = create_sentence_score_bar_chart(judgments, f'{blog_title[:20]}... 문장별 점수')
+        donut_chart = create_donut_chart(pos_count, neg_count, f'{blog_title[:20]}... 긍/부정 비율')
         
         return gr.update(value=donut_chart, visible=True), gr.update(value=score_chart, visible=True), gr.update(value=summary_text, visible=True)
 
+    def update_festival_detail_charts(evt: gr.SelectData, df: pd.DataFrame, festival_full_results: list):
+        if not evt.value or not festival_full_results:
+            return [gr.update(visible=False)] * 8
+
+        selected_row = df.iloc[evt.index[0]]
+        festival_name = selected_row["축제명"]
+        selected_festival_result = festival_full_results[evt.index[0]]
+        
+        return package_festival_details(selected_festival_result, festival_name)
+
+    # --- UI Component Creators ---
     def create_keyword_analysis_outputs():
-        """키워드 분석 탭을 위한 상세 결과 UI 컴포넌트 그룹을 생성합니다."""
         with gr.Blocks():
             status_output = gr.Textbox(label="분석 상태", interactive=False)
             url_output = gr.Markdown(label="수집된 전체 URL 리스트")
@@ -59,7 +76,7 @@ def create_ui():
                 blog_total_pages_output = gr.Textbox(value="/ 1", label="전체 페이지", interactive=False, scale=1)
                 blog_list_csv_output = gr.File(label="전체 블로그 목록(CSV) 다운로드", visible=False, scale=2)
             
-            with gr.Accordion("개별 블로그 상세 분석 (표에서 행 선택)", open=False, visible=True):
+            with gr.Accordion("개별 블로그 상세 분석 (표에서 행 선택)", open=False, visible=True) as blog_detail_accordion:
                 individual_summary_output = gr.Textbox(label="긍/부정 문장 요약", visible=False, interactive=False, lines=10)
                 with gr.Row():
                     individual_donut_chart = gr.Plot(label="개별 블로그 긍/부정 비율", visible=False)
@@ -73,52 +90,92 @@ def create_ui():
             overall_chart_output, overall_summary_text_output, overall_csv_output,
             spring_chart_output, summer_chart_output, autumn_chart_output, winter_chart_output,
             blog_results_output, blog_results_df, blog_judgments_state, blog_page_num_input, blog_total_pages_output, blog_list_csv_output,
-            individual_donut_chart, individual_score_chart, individual_summary_output
+            individual_donut_chart, individual_score_chart, individual_summary_output, blog_detail_accordion
         ]
 
     def create_category_analysis_outputs():
-        """카테고리 분석 탭을 위한 상세 결과 UI 컴포넌트 그룹을 생성합니다."""
         with gr.Blocks():
+            # Tier 1: 카테고리 종합 분석
             status_output = gr.Textbox(label="분석 상태", interactive=False)
             with gr.Accordion("카테고리 종합 분석 결과", open=True):
-                negative_summary_output = gr.Markdown(label="주요 불만 사항 요약", visible=False)
+                cat_negative_summary_output = gr.Markdown(label="주요 불만 사항 요약", visible=False)
                 with gr.Row():
-                    overall_chart_output = gr.Plot(label="카테고리 전체 후기 요약", visible=False)
-                    overall_summary_text_output = gr.Markdown(label="종합 분석 상세", visible=False)
-                    overall_csv_output = gr.File(label="카테고리 전체 요약 (CSV) 다운로드", visible=False)
+                    cat_overall_chart_output = gr.Plot(label="카테고리 전체 후기 요약", visible=False)
+                    cat_overall_summary_text_output = gr.Markdown(label="종합 분석 상세", visible=False)
+                    cat_overall_csv_output = gr.File(label="카테고리 전체 요약 (CSV) 다운로드", visible=False)
                 with gr.Accordion("계절별 상세 분석", open=False):
                     with gr.Row():
-                        spring_chart_output = gr.Plot(label="봄 시즌", visible=False)
-                        summer_chart_output = gr.Plot(label="여름 시즌", visible=False)
+                        cat_spring_chart_output = gr.Plot(label="봄 시즌", visible=False)
+                        cat_summer_chart_output = gr.Plot(label="여름 시즌", visible=False)
                     with gr.Row():
-                        autumn_chart_output = gr.Plot(label="가을 시즌", visible=False)
-                        winter_chart_output = gr.Plot(label="겨울 시즌", visible=False)
-            
+                        cat_autumn_chart_output = gr.Plot(label="가을 시즌", visible=False)
+                        cat_winter_chart_output = gr.Plot(label="겨울 시즌", visible=False)
+
+            # Tier 2: 축제별 요약 및 상세 분석
             gr.Markdown("### 축제별 요약 결과")
             festival_results_df = gr.State()
-            festival_results_output = gr.DataFrame(headers=["축제명", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)"], label="축제별 분석 결과", wrap=True)
+            festival_full_results_state = gr.State()
+            festival_results_output = gr.DataFrame(headers=["축제명", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)"], label="축제별 분석 결과", wrap=True, interactive=True)
             with gr.Row():
                 festival_page_num_input = gr.Number(value=1, label="페이지 번호", interactive=True, scale=1)
                 festival_total_pages_output = gr.Textbox(value="/ 1", label="전체 페이지", interactive=False, scale=1)
                 festival_list_csv_output = gr.File(label="축제 요약 목록(CSV) 다운로드", visible=False, scale=2)
-            festival_page_num_input.submit(change_page, inputs=[festival_results_df, festival_page_num_input], outputs=[festival_results_output, festival_page_num_input, festival_total_pages_output])
 
+            with gr.Accordion("개별 축제 상세 분석 (표에서 행 선택)", open=False, visible=False) as festival_detail_accordion:
+                fest_negative_summary_output = gr.Markdown(label="주요 불만 사항 요약", visible=False)
+                with gr.Row():
+                    fest_overall_chart_output = gr.Plot(label="개별 축제 후기 요약", visible=False)
+                    fest_overall_summary_text_output = gr.Markdown(label="종합 분석 상세", visible=False)
+                with gr.Accordion("계절별 상세 분석", open=False):
+                    with gr.Row():
+                        fest_spring_chart_output = gr.Plot(label="봄 시즌", visible=False)
+                        fest_summer_chart_output = gr.Plot(label="여름 시즌", visible=False)
+                    with gr.Row():
+                        fest_autumn_chart_output = gr.Plot(label="가을 시즌", visible=False)
+                        fest_winter_chart_output = gr.Plot(label="겨울 시즌", visible=False)
+
+            # Tier 3: 전체 블로그 상세 결과 및 개별 블로그 상세 분석
             gr.Markdown("### 전체 블로그 상세 결과")
             all_blogs_df = gr.State()
-            all_blogs_output = gr.DataFrame(headers=["블로그 제목", "링크", "감성 빈도", "감성 점수", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)", "부정 비율 (%)"], label="전체 블로그 분석 결과", wrap=True)
+            all_blog_judgments_state = gr.State()
+            all_blogs_output = gr.DataFrame(headers=["블로그 제목", "링크", "감성 빈도", "감성 점수", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)", "부정 비율 (%)"], label="전체 블로그 분석 결과", wrap=True, interactive=True)
             with gr.Row():
                 all_blogs_page_num_input = gr.Number(value=1, label="페이지 번호", interactive=True, scale=1)
                 all_blogs_total_pages_output = gr.Textbox(value="/ 1", label="전체 페이지", interactive=False, scale=1)
                 all_blogs_list_csv_output = gr.File(label="전체 블로그 목록(CSV) 다운로드", visible=False, scale=2)
+
+            with gr.Accordion("개별 블로그 상세 분석 (표에서 행 선택)", open=False, visible=False) as blog_detail_accordion:
+                individual_summary_output = gr.Textbox(label="긍/부정 문장 요약", visible=False, interactive=False, lines=10)
+                with gr.Row():
+                    individual_donut_chart = gr.Plot(label="개별 블로그 긍/부정 비율", visible=False)
+                    individual_score_chart = gr.Plot(label="문장별 감성 점수", visible=False)
+
+            # --- Event Handlers for Category Tab ---
+            festival_page_num_input.submit(change_page, inputs=[festival_results_df, festival_page_num_input], outputs=[festival_results_output, festival_page_num_input, festival_total_pages_output])
             all_blogs_page_num_input.submit(change_page, inputs=[all_blogs_df, all_blogs_page_num_input], outputs=[all_blogs_output, all_blogs_page_num_input, all_blogs_total_pages_output])
+            
+            festival_detail_outputs = [
+                fest_negative_summary_output, fest_overall_chart_output, fest_overall_summary_text_output,
+                fest_spring_chart_output, fest_summer_chart_output, fest_autumn_chart_output, fest_winter_chart_output, festival_detail_accordion
+            ]
+            festival_results_output.select(update_festival_detail_charts, inputs=[festival_results_df, festival_full_results_state], outputs=festival_detail_outputs)
+            
+            blog_detail_outputs = [individual_donut_chart, individual_score_chart, individual_summary_output, blog_detail_accordion]
+            all_blogs_output.select(update_individual_charts, inputs=[all_blogs_df, all_blog_judgments_state], outputs=blog_detail_outputs)
 
         return [
-            status_output, 
-            negative_summary_output, 
-            overall_chart_output, overall_summary_text_output, overall_csv_output,
-            spring_chart_output, summer_chart_output, autumn_chart_output, winter_chart_output,
-            festival_results_output, festival_results_df, festival_page_num_input, festival_total_pages_output, festival_list_csv_output,
-            all_blogs_output, all_blogs_df, all_blogs_page_num_input, all_blogs_total_pages_output, all_blogs_list_csv_output
+            # Tier 1
+            status_output, cat_negative_summary_output, cat_overall_chart_output, cat_overall_summary_text_output, cat_overall_csv_output,
+            cat_spring_chart_output, cat_summer_chart_output, cat_autumn_chart_output, cat_winter_chart_output,
+            # Tier 2
+            festival_results_output, festival_results_df, festival_full_results_state, festival_page_num_input, festival_total_pages_output, festival_list_csv_output,
+            # Tier 2 Details
+            fest_negative_summary_output, fest_overall_chart_output, fest_overall_summary_text_output,
+            fest_spring_chart_output, fest_summer_chart_output, fest_autumn_chart_output, fest_winter_chart_output, festival_detail_accordion,
+            # Tier 3
+            all_blogs_output, all_blogs_df, all_blog_judgments_state, all_blogs_page_num_input, all_blogs_total_pages_output, all_blogs_list_csv_output,
+            # Tier 3 Details
+            individual_donut_chart, individual_score_chart, individual_summary_output, blog_detail_accordion
         ]
 
     with gr.Blocks(theme=gr.themes.Soft()) as demo:
@@ -192,8 +249,10 @@ def create_ui():
                     compare_analyze_button = gr.Button("카테고리 비교 분석 시작", variant="primary")
                 with gr.Row():
                     with gr.Column():
+                        gr.Markdown("### 그룹 A 분석 결과")
                         compare_outputs_a = create_category_analysis_outputs()
                     with gr.Column():
+                        gr.Markdown("### 그룹 B 분석 결과")
                         compare_outputs_b = create_category_analysis_outputs()
                 cat1_a_dropdown.change(update_cat2_choices, inputs=cat1_a_dropdown, outputs=cat2_a_dropdown)
                 cat2_a_dropdown.change(update_cat3_choices, inputs=[cat1_a_dropdown, cat2_a_dropdown], outputs=cat3_a_dropdown)
