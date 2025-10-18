@@ -103,6 +103,7 @@ def create_ui():
             individual_donut_chart, individual_score_chart, individual_summary_output, blog_detail_accordion
         ]
 
+    # [수정] 축제 요약 표의 헤더를 업데이트하여 모든 열 표시
     def create_category_analysis_outputs():
         with gr.Blocks():
             status_output = gr.Textbox(label="분석 상태", interactive=False)
@@ -123,7 +124,14 @@ def create_ui():
             gr.Markdown("### 축제별 요약 결과")
             festival_results_df = gr.State()
             festival_full_results_state = gr.State()
-            festival_results_output = gr.DataFrame(headers=["축제명", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)"], label="축제별 분석 결과", wrap=True, interactive=True)
+            # --- 핵심 수정: headers 업데이트 ---
+            festival_results_output = gr.DataFrame(
+                headers=["축제명", "감성 빈도", "감성 점수", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)", "부정 비율 (%)", "주요 불만 사항 요약"], 
+                label="축제별 분석 결과", 
+                wrap=True, 
+                interactive=True
+            )
+            # ------------------------------------
             with gr.Row():
                 festival_page_num_input = gr.Number(value=1, label="페이지 번호", interactive=True, scale=1)
                 festival_total_pages_output = gr.Textbox(value="/ 1", label="전체 페이지", interactive=False, scale=1)

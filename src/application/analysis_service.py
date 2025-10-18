@@ -49,7 +49,8 @@ def summarize_negative_feedback(sentences: list) -> str:
     if not sentences: return ""
     llm = get_llm_client(model="gemini-2.5-pro")
     unique_sentences = sorted(list(set(sentences)), key=len, reverse=True)
-    negative_feedback_str = "\n- ".join(unique_sentences)
+    # LLM 부하를 줄이기 위해 최대 50개 문장만 요약 대상으로 함
+    negative_feedback_str = "\n- ".join(unique_sentences[:50]) 
     prompt = f'''[수집된 부정적인 의견]\n- {negative_feedback_str}\n\n[요청] 위 의견들을 종합하여 주요 불만 사항을 1., 2., 3. ... 형식의 목록으로 요약해주세요.'''
     try:
         response = llm.invoke(prompt)
@@ -140,6 +141,7 @@ def _analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_de
         "url_markdown": f"### 분석된 블로그 URL ({len(valid_blogs_data)}개)\n" + "\n".join([f"- [{b['title']}]({b['link']})" for b in valid_blogs_data])
     }
 
+# [수정] 각 축제 분석 후 즉시 요약하고 결과를 저장하도록 변경
 def _perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details, progress, initial_progress, total_steps):
     festivals_to_analyze = festival_loader.get_festivals(cat1, cat2, cat3)
     if not festivals_to_analyze: return {"error": "분석할 축제를 찾을 수 없습니다."}
@@ -153,13 +155,27 @@ def _perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_detail
 
     total_festivals = len(festivals_to_analyze)
     for i, festival_name in enumerate(festivals_to_analyze):
-        current_step_progress = (i + 1) / total_festivals
-        overall_progress = (initial_progress + current_step_progress) / total_steps
-        progress(overall_progress, desc=f"분석 중: {festival_name} ({i+1}/{total_festivals})")
+        # 진행률 업데이트 로직 개선
+        current_festival_progress = (i) / total_festivals
+        overall_progress = (initial_progress + current_festival_progress) / total_steps
         
-        result = _analyze_single_keyword_fully(festival_name, num_reviews, driver, log_details, progress, "카테고리 분석")
+        # 각 축제 내 블로그 분석 진행률 표시를 위한 nested progress
+        def nested_progress_callback(p, desc=""):
+             # 각 축제는 전체 진행률의 1/total_festivals 만큼 기여
+            festival_step_progress = p / total_festivals 
+            current_overall_progress = overall_progress + festival_step_progress
+            progress(current_overall_progress, desc=f"분석 중: {festival_name} ({i+1}/{total_festivals}) - {desc}")
+
+        result = _analyze_single_keyword_fully(festival_name, num_reviews, driver, log_details, nested_progress_callback, "블로그 분석")
         if "error" in result: continue
 
+        # --- 핵심 수정: 각 축제 분석 직후 요약 실행 ---
+        print(f"   [{festival_name}] 부정 문장 요약 시작...")
+        neg_summary = summarize_negative_feedback(result["negative_sentences"])
+        result['precomputed_negative_summary'] = neg_summary # 전체 결과에도 저장 (UI 클릭 시 사용)
+        print(f"   [{festival_name}] 부정 문장 요약 완료.")
+        # ----------------------------------------------
+        
         festival_full_results.append(result)
 
         agg_pos += result["total_pos"]
@@ -171,10 +187,23 @@ def _perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_detail
             agg_seasonal[season]["pos"] += data["pos"]
             agg_seasonal[season]["neg"] += data["neg"]
         
+        # --- 핵심 수정: category_results에 모든 정보 추가 (CSV용) ---
+        total_freq = result["total_pos"] + result["total_neg"]
+        pos_perc = (result['total_pos'] / total_freq * 100) if total_freq > 0 else 0.0
+        neg_perc = (result['total_neg'] / total_freq * 100) if total_freq > 0 else 0.0
+        
         category_results.append({
-            "축제명": festival_name, "긍정 문장 수": result["total_pos"], "부정 문장 수": result["total_neg"],
-            "긍정 비율 (%)": f"{(result['total_pos'] / (result['total_pos'] + result['total_neg']) * 100):.1f}" if (result['total_pos'] + result['total_neg']) > 0 else "0.0"
+            "축제명": festival_name,
+            '감성 빈도': result['total_sentiment_frequency'],
+            '감성 점수': f"{result['total_sentiment_score']:.1f}",
+            "긍정 문장 수": result["total_pos"],
+            "부정 문장 수": result["total_neg"],
+            "긍정 비율 (%)": f"{pos_perc:.1f}",
+            "부정 비율 (%)": f"{neg_perc:.1f}", 
+            '주요 불만 사항 요약': neg_summary 
         })
+        # ----------------------------------------------------
+
         if not result["blog_results_df"].empty:
             all_blog_posts_list.append(result["blog_results_df"])
 
@@ -194,9 +223,9 @@ def _perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_detail
         "total_sentiment_score": total_sentiment_score,
         "seasonal_data": agg_seasonal,
         "negative_sentences": agg_negative_sentences,
-        "individual_festival_results_df": pd.DataFrame(category_results),
+        "individual_festival_results_df": pd.DataFrame(category_results), # 풍부해진 데이터 사용
         "all_blog_posts_df": pd.concat(all_blog_posts_list, ignore_index=True) if all_blog_posts_list else pd.DataFrame(),
-        "festival_full_results": festival_full_results,
+        "festival_full_results": festival_full_results, # 요약 포함된 결과 사용
         "all_blog_judgments": all_blog_judgments
     }
 
@@ -259,11 +288,15 @@ def _package_keyword_results(results: dict, name: str):
         gr.update(visible=False)
     )
 
+# [수정] 클릭 시 LLM 호출 대신 미리 계산된 요약 사용
 def package_festival_details(results: dict, name: str):
     if "error" in results:
         return [gr.update(value=results["error"], visible=True)] + [gr.update(visible=False)] * 7
 
-    neg_summary_text = summarize_negative_feedback(results["negative_sentences"])
+    # --- 핵심 수정: 미리 계산된 요약 결과 사용 ---
+    neg_summary_text = results.get("precomputed_negative_summary", "미리 계산된 요약 없음") 
+    # ---------------------------------------------
+
     overall_summary_text = f"""
 - **긍정 문장 수**: {results['total_pos']}개
 - **부정 문장 수**: {results['total_neg']}개
@@ -278,9 +311,10 @@ def package_festival_details(results: dict, name: str):
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["여름"]["pos"], results["seasonal_data"]["여름"]["neg"], "여름 시즌"), visible=results["seasonal_data"]["여름"]["pos"] > 0 or results["seasonal_data"]["여름"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["가을"]["pos"], results["seasonal_data"]["가을"]["neg"], "가을 시즌"), visible=results["seasonal_data"]["가을"]["pos"] > 0 or results["seasonal_data"]["가을"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["겨울"]["pos"], results["seasonal_data"]["겨울"]["neg"], "겨울 시즌"), visible=results["seasonal_data"]["겨울"]["pos"] > 0 or results["seasonal_data"]["겨울"]["neg"] > 0),
-        gr.update(visible=True, open=True)
+        gr.update(visible=True, open=True) 
     ]
 
+# [수정] CSV 저장 시 풍부해진 DataFrame을 사용
 def _package_category_results(results: dict, name: str):
     if "error" in results: return [results["error"]] + [gr.update(visible=False)] * 33
 
@@ -303,16 +337,21 @@ def _package_category_results(results: dict, name: str):
     }])
     cat_overall_csv = save_df_to_csv(summary_df, "category_summary", name)
 
+    # --- 핵심 수정: 풍부해진 individual_festival_results_df 사용 ---
     festival_df_for_csv = results["individual_festival_results_df"].copy()
     festival_list_csv = save_df_to_csv(festival_df_for_csv, "festival_summary", name)
+    # -----------------------------------------------------------
+    
     festival_page_df, _, festival_pages_str = change_page(results["individual_festival_results_df"], 1)
 
     all_blogs_df = results["all_blog_posts_df"]
     blog_df_for_csv = all_blogs_df.copy()
     if not blog_df_for_csv.empty:
+        # CSV 저장 시 요약 내용 축약 (기존과 동일)
         blog_df_for_csv['긍/부정 문장 요약'] = blog_df_for_csv['긍/부정 문장 요약'].str.slice(0, 50) + '...더보기'
     all_blogs_list_csv = save_df_to_csv(blog_df_for_csv, "all_blogs", name)
     
+    # UI 표시용 DataFrame에서는 요약 열 제거 (기존과 동일)
     df_for_display = all_blogs_df.drop(columns=['긍/부정 문장 요약']) if not all_blogs_df.empty else all_blogs_df
     blog_page_df, _, blog_pages_str = change_page(df_for_display, 1)
 
@@ -327,8 +366,8 @@ def _package_category_results(results: dict, name: str):
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["가을"]["pos"], results["seasonal_data"]["가을"]["neg"], "가을 시즌"), visible=results["seasonal_data"]["가을"]["pos"] > 0 or results["seasonal_data"]["가을"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["겨울"]["pos"], results["seasonal_data"]["겨울"]["neg"], "겨울 시즌"), visible=results["seasonal_data"]["겨울"]["pos"] > 0 or results["seasonal_data"]["겨울"]["neg"] > 0),
         festival_page_df,
-        results["individual_festival_results_df"],
-        results["festival_full_results"],
+        results["individual_festival_results_df"], # State용 (풍부해진 데이터)
+        results["festival_full_results"], # State용 (요약 포함된 데이터)
         1,
         festival_pages_str,
         gr.update(value=festival_list_csv, visible=festival_list_csv is not None),
