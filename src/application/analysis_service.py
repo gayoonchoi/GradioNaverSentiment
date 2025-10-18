@@ -236,7 +236,6 @@ def _package_keyword_results(results: dict, name: str):
     df_for_display = results["blog_results_df"].drop(columns=['긍/부정 문장 요약'])
     initial_page_df, _, total_pages_str = change_page(df_for_display, 1)
 
-    # [수정됨] Accordion을 위한 반환값을 하나 추가하여 총 20개로 맞춤
     return (
         results["status"],
         results["url_markdown"],
@@ -254,10 +253,10 @@ def _package_keyword_results(results: dict, name: str):
         1,
         total_pages_str,
         gr.update(value=blog_list_csv, visible=blog_list_csv is not None),
-        gr.update(visible=False), # individual_donut_chart
-        gr.update(visible=False), # individual_score_chart
-        gr.update(visible=False), # individual_summary_output
-        gr.update(visible=False)  # blog_detail_accordion
+        gr.update(visible=False),
+        gr.update(visible=False),
+        gr.update(visible=False),
+        gr.update(visible=False)
     )
 
 def package_festival_details(results: dict, name: str):
@@ -279,7 +278,7 @@ def package_festival_details(results: dict, name: str):
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["여름"]["pos"], results["seasonal_data"]["여름"]["neg"], "여름 시즌"), visible=results["seasonal_data"]["여름"]["pos"] > 0 or results["seasonal_data"]["여름"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["가을"]["pos"], results["seasonal_data"]["가을"]["neg"], "가을 시즌"), visible=results["seasonal_data"]["가을"]["pos"] > 0 or results["seasonal_data"]["가을"]["neg"] > 0),
         gr.update(value=create_stacked_bar_chart(results["seasonal_data"]["겨울"]["pos"], results["seasonal_data"]["겨울"]["neg"], "겨울 시즌"), visible=results["seasonal_data"]["겨울"]["pos"] > 0 or results["seasonal_data"]["겨울"]["neg"] > 0),
-        gr.update(visible=True)
+        gr.update(visible=True, open=True)
     ]
 
 def _package_category_results(results: dict, name: str):
