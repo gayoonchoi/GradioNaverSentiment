@@ -9,6 +9,7 @@ from ..infrastructure.web.naver_api import search_naver_blog_page
 from ..infrastructure.web.scraper import scrape_blog_content
 from ..data import festival_loader
 from .utils import summarize_negative_feedback # 요약 함수 임포트
+from ..infrastructure.web.naver_trend_api import create_trend_graph
 
 def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_details: bool, progress: gr.Progress, progress_desc: str):
     """단일 키워드에 대한 전체 분석 수행"""
@@ -121,7 +122,8 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
         "seasonal_data": seasonal_data, "negative_sentences": all_negative_sentences, 
         "blog_results_df": pd.DataFrame(blog_results_list) if blog_results_list else pd.DataFrame(),
         "blog_judgments": blog_judgments_list,
-        "url_markdown": f"### 분석된 블로그 URL ({len(valid_blogs_data)}개)\n" + "\n".join([f"- [{b['title']}]({b['link']})" for b in valid_blogs_data])
+        "url_markdown": f"### 분석된 블로그 URL ({len(valid_blogs_data)}개)\n" + "\n".join([f"- [{b['title']}]({b['link']})" for b in valid_blogs_data]),
+        "trend_graph": create_trend_graph(keyword)
     }
 
 def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details, progress: gr.Progress, initial_progress, total_steps):

@@ -5,6 +5,7 @@ import traceback
 from .analysis_logic import analyze_single_keyword_fully, perform_category_analysis
 from .result_packager import package_keyword_results, package_category_results, package_festival_details
 from .utils import create_driver, summarize_negative_feedback
+from ..infrastructure.web.naver_trend_api import create_trend_graph
 
 # --- Public Service Functions for Gradio ---
 
@@ -108,7 +109,7 @@ def run_selected_festivals_comparison(
     num_reviews, log_details, progress=gr.Progress(track_tqdm=True)
 ):
     driver = None
-    num_outputs_per_festival = 20 
+    num_outputs_per_festival = 21 
     
     selected_festivals = [f for f in [festival_1, festival_2, festival_3, festival_4] if f] 
     
@@ -190,3 +191,18 @@ def run_selected_festivals_comparison(
 # 여기서는 후자를 가정하고 analysis_service.py에서는 제거합니다.
 # from .result_packager import package_festival_details
 # -> gradio_ui.py 또는 event_handlers.py에서 from src.application.result_packager import package_festival_details 로 임포트 필요
+
+def get_trend_graph_for_festival(festival_name: str):
+    """축제 이름으로 트렌드 그래프를 생성합니다."""
+    if not festival_name:
+        return gr.update(visible=False)
+    
+    try:
+        # 여기서는 축제 기간 정보 없이 호출합니다.
+        # 필요하다면, festival_loader 등을 통해 축제 기간을 조회하는 로직을 추가할 수 있습니다.
+        graph = create_trend_graph(festival_name)
+        return gr.update(value=graph, visible=graph is not None)
+    except Exception as e:
+        print(f"트렌드 그래프 생성 중 오류 ({festival_name}): {e}")
+        traceback.print_exc()
+        return gr.update(visible=False)

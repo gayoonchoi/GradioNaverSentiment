@@ -35,5 +35,13 @@ def get_google_api_key():
         raise ValueError(".env 파일에 GOOGLE_API_KEY를 설정하세요.")
     return api_key
 
+def get_naver_trend_api_keys():
+    """네이버 트렌드 API 키를 반환합니다."""
+    client_id = os.getenv("NAVER_TREND_CLIENT_ID")
+    client_secret = os.getenv("NAVER_TREND_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise ValueError(".env 파일에 NAVER_TREND_CLIENT_ID와 NAVER_TREND_CLIENT_SECRET을 설정하세요.")
+    return client_id, client_secret
+
 # 초기 환경 설정 실행
 setup_environment()

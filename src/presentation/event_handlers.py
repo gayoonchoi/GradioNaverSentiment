@@ -6,6 +6,7 @@ from ..data import festival_loader
 from ..infrastructure.reporting.charts import create_donut_chart, create_sentence_score_bar_chart
 from ..application.utils import change_page # utils에서 임포트
 from ..application.result_packager import package_festival_details # result_packager에서 임포트
+from ..application.analysis_service import get_trend_graph_for_festival
 
 def update_individual_charts(evt: gr.SelectData, df_full: pd.DataFrame, judgments_list: list, page_num: int):
     """모든 블로그 표 클릭을 처리하는 통합 핸들러"""
@@ -52,7 +53,7 @@ def update_individual_charts(evt: gr.SelectData, df_full: pd.DataFrame, judgment
 def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, festival_full_results: list, page_num: int):
     """축제 표 클릭 핸들러"""
     if not evt.value or not isinstance(festival_full_results, list) or not festival_full_results:
-        return [gr.update(visible=False)] * 8
+        return [gr.update(visible=False)] * 9
 
     PAGE_SIZE = 10
     try:
@@ -60,27 +61,37 @@ def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, fes
         
         if not (0 <= actual_index < len(df_full) and 0 <= actual_index < len(festival_full_results)):
              print(f"오류: 잘못된 인덱스 접근 시도 (축제) - actual_index={actual_index}, df_len={len(df_full)}, results_len={len(festival_full_results)}")
-             return [gr.update(visible=False)] * 8
+             return [gr.update(visible=False)] * 9
 
         selected_row = df_full.iloc[actual_index]
         festival_name = selected_row.get("축제명", "이름 없음")
         selected_festival_result = festival_full_results[actual_index]
 
-        # package_festival_details 함수가 딕셔너리를 받는지 확인
         if not isinstance(selected_festival_result, dict):
              print(f"오류: festival_full_results의 요소가 dict가 아님 - index={actual_index}, type={type(selected_festival_result)}")
-             return [f"오류: 축제 '{festival_name}'의 상세 데이터 형식 오류"] + [gr.update(visible=False)] * 7
+             return [f"오류: 축제 '{festival_name}'의 상세 데이터 형식 오류"] + [gr.update(visible=False)] * 8
 
-        return package_festival_details(selected_festival_result, festival_name)
+        # 트렌드 그래프 생성
+        trend_graph = get_trend_graph_for_festival(festival_name)
+        
+        # 기존 상세 정보 패키징
+        packaged_details = package_festival_details(selected_festival_result, festival_name)
+
+        # 트렌드 그래프를 포함하여 반환
+        return_values = [trend_graph] + packaged_details
+        print(f"[EventHandler Debug] Returning {len(return_values)} values for festival details.")
+        return return_values
+        print(f"[Event Handler Debug] Returning {len(return_values)} values for festival details.")
+        return return_values
         
     except IndexError:
          print(f"오류: 인덱스 범위 초과 (축제) - page_num={page_num}, evt.index={evt.index}, df_len={len(df_full)}, results_len={len(festival_full_results)}")
-         return [gr.update(visible=False)] * 8
+         return [gr.update(visible=False)] * 9
     except Exception as e:
          print(f"update_festival_detail_charts 오류: {e}")
          import traceback
          traceback.print_exc()
-         return [gr.update(visible=False)] * 8
+         return [gr.update(visible=False)] * 9
 
 
 # --- 드롭다운 업데이트 함수들 ---

@@ -6,7 +6,7 @@ from ..infrastructure.reporting.charts import create_donut_chart, create_stacked
 import traceback
 
 def package_keyword_results(results: dict, name: str):
-    num_outputs = 20
+    num_outputs = 21 # create_keyword_analysis_outputs 반환 개수
     if "error" in results: return [results["error"]] + [gr.update(visible=False)] * (num_outputs - 1)
 
     try:
@@ -50,11 +50,15 @@ def package_keyword_results(results: dict, name: str):
         summer_pos = seasonal_data.get("여름", {}).get("pos", 0); summer_neg = seasonal_data.get("여름", {}).get("neg", 0)
         autumn_pos = seasonal_data.get("가을", {}).get("pos", 0); autumn_neg = seasonal_data.get("가을", {}).get("neg", 0)
         winter_pos = seasonal_data.get("겨울", {}).get("pos", 0); winter_neg = seasonal_data.get("겨울", {}).get("neg", 0)
+        
+        trend_graph = results.get("trend_graph")
+        print(f"[Packager Debug] Trend graph file path: {trend_graph}")
 
         return (
             results.get("status", "분석 완료"), results.get("url_markdown", "분석된 URL 없음"),
             gr.update(value=neg_summary_text, visible=bool(neg_summary_text)),
             gr.update(value=create_donut_chart(results.get("total_pos", 0), results.get("total_neg", 0), f'{name} 전체 후기 요약'), visible=results.get("total_pos", 0) > 0 or results.get("total_neg", 0) > 0),
+            gr.update(value=trend_graph, visible=trend_graph is not None),
             gr.update(value=overall_summary_text, visible=True),
             gr.update(value=summary_csv, visible=summary_csv is not None),
             gr.update(value=create_stacked_bar_chart(spring_pos, spring_neg, "봄 시즌"), visible=spring_pos > 0 or spring_neg > 0),
@@ -111,7 +115,7 @@ def package_festival_details(results: dict, name: str):
 
 
 def package_category_results(results: dict, name: str):
-    num_outputs = 33 # UI 컴포넌트 개수 재확인
+    num_outputs = 34 # UI 컴포넌트 개수 재확인
     if "error" in results: return [results["error"]] + [gr.update(visible=False)] * (num_outputs - 1)
 
     try:
@@ -123,7 +127,6 @@ def package_category_results(results: dict, name: str):
 - **감성 점수**: {results.get('total_sentiment_score', 50.0):.1f}점 (0~100점)"""
 
         # --- CSV 생성 ---
-        # ... (CSV 생성 로직 동일) ...
         summary_df_data = {
             '카테고리': name, '감성 빈도': results.get('total_sentiment_frequency', 0),
             '감성 점수': f"{results.get('total_sentiment_score', 50.0):.1f}",
@@ -159,7 +162,6 @@ def package_category_results(results: dict, name: str):
         cat_autumn_pos = agg_seasonal.get("가을", {}).get("pos", 0); cat_autumn_neg = agg_seasonal.get("가을", {}).get("neg", 0)
         cat_winter_pos = agg_seasonal.get("겨울", {}).get("pos", 0); cat_winter_neg = agg_seasonal.get("겨울", {}).get("neg", 0)
 
-        # 33개 컴포넌트에 대한 업데이트 반환
         return (
             # Tier 1 (9개)
             results.get("status", "분석 완료"),
@@ -171,9 +173,10 @@ def package_category_results(results: dict, name: str):
             gr.update(value=create_stacked_bar_chart(cat_summer_pos, cat_summer_neg, "여름 시즌"), visible=cat_summer_pos > 0 or cat_summer_neg > 0),
             gr.update(value=create_stacked_bar_chart(cat_autumn_pos, cat_autumn_neg, "가을 시즌"), visible=cat_autumn_pos > 0 or cat_autumn_neg > 0),
             gr.update(value=create_stacked_bar_chart(cat_winter_pos, cat_winter_neg, "겨울 시즌"), visible=cat_winter_pos > 0 or cat_winter_neg > 0),
-            # Tier 2 (14개)
+            # Tier 2 (15개)
             festival_page_df, festival_df, results.get("festival_full_results", []), festival_page_num, festival_pages_str,
             gr.update(value=festival_list_csv, visible=festival_list_csv is not None),
+            gr.update(visible=False), # fest_trend_graph_output
             gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
             gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False, open=False),
             # Tier 3 (10개)

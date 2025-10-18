@@ -12,6 +12,8 @@ def create_keyword_analysis_outputs():
             negative_summary_output = gr.Markdown(label="주요 불만 사항 요약", visible=False)
             with gr.Row():
                 overall_chart_output = gr.Plot(label="전체 후기 요약", visible=False)
+                trend_graph_output = gr.Image(label="검색어 트렌드", visible=False)
+            with gr.Row():
                 overall_summary_text_output = gr.Markdown(label="종합 분석 상세", visible=False)
                 overall_csv_output = gr.File(label="전체 후기 요약 (CSV) 다운로드", visible=False)
             with gr.Accordion("계절별 상세 분석", open=False):
@@ -27,7 +29,6 @@ def create_keyword_analysis_outputs():
         blog_judgments_state = gr.State() # 전체 judgments 저장용
         blog_results_output = gr.DataFrame( # 현재 페이지만 표시
             headers=["블로그 제목", "링크", "감성 빈도", "감성 점수", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)", "부정 비율 (%)", "긍/부정 문장 요약"],
-            # 'markdown' -> 'str' 변경
             datatype=["str", "str", "number", "str", "number", "number", "str", "str", "str"],
             label="개별 블로그 분석 결과", wrap=True, interactive=True
         )
@@ -56,10 +57,10 @@ def create_keyword_analysis_outputs():
             outputs=[individual_donut_chart, individual_score_chart, individual_summary_output, blog_detail_accordion]
         )
 
-    # UI 컴포넌트 리스트 반환 (순서 중요!) - 총 20개
+    # UI 컴포넌트 리스트 반환 (순서 중요!) - 총 21개
     return [
         status_output, url_output, negative_summary_output,
-        overall_chart_output, overall_summary_text_output, overall_csv_output,
+        overall_chart_output, trend_graph_output, overall_summary_text_output, overall_csv_output,
         spring_chart_output, summer_chart_output, autumn_chart_output, winter_chart_output,
         blog_results_output, blog_results_df, blog_judgments_state, blog_page_num_input, blog_total_pages_output, blog_list_csv_output,
         individual_donut_chart, individual_score_chart, individual_summary_output, blog_detail_accordion
@@ -101,6 +102,7 @@ def create_category_analysis_outputs():
             festival_list_csv_output = gr.File(label="축제 요약 목록(CSV) 다운로드", visible=False, scale=2)
 
         with gr.Accordion("개별 축제 상세 분석 (표에서 행 선택)", open=False, visible=False) as festival_detail_accordion:
+            fest_trend_graph_output = gr.Image(label="검색어 트렌드", visible=False)
             fest_negative_summary_output = gr.Markdown(label="주요 불만 사항 요약", visible=False)
             with gr.Row():
                 fest_overall_chart_output = gr.Plot(label="개별 축제 후기 요약", visible=False)
@@ -146,6 +148,7 @@ def create_category_analysis_outputs():
         )
 
         festival_detail_outputs = [
+            fest_trend_graph_output,
             fest_negative_summary_output, fest_overall_chart_output, fest_overall_summary_text_output,
             fest_spring_chart_output, fest_summer_chart_output, fest_autumn_chart_output, fest_winter_chart_output,
             festival_detail_accordion
@@ -166,14 +169,14 @@ def create_category_analysis_outputs():
             outputs=blog_detail_outputs
         )
 
-    # --- 핵심 수정: 반환 리스트의 개수를 33개로 정확히 맞춤 ---
+    # --- 핵심 수정: 반환 리스트의 개수를 34개로 정확히 맞춤 ---
     return [
         # Tier 1 (9개)
         status_output, cat_negative_summary_output, cat_overall_chart_output, cat_overall_summary_text_output, cat_overall_csv_output,
         cat_spring_chart_output, cat_summer_chart_output, cat_autumn_chart_output, cat_winter_chart_output,
-        # Tier 2 (14개)
+        # Tier 2 (15개)
         festival_results_output, festival_results_df, festival_full_results_state, festival_page_num_input, festival_total_pages_output, festival_list_csv_output,
-        fest_negative_summary_output, fest_overall_chart_output, fest_overall_summary_text_output,
+        fest_trend_graph_output, fest_negative_summary_output, fest_overall_chart_output, fest_overall_summary_text_output,
         fest_spring_chart_output, fest_summer_chart_output, fest_autumn_chart_output, fest_winter_chart_output, festival_detail_accordion,
         # Tier 3 (10개)
         all_blogs_output, all_blogs_df, all_blog_judgments_state, all_blogs_page_num_input, all_blogs_total_pages_output, all_blogs_list_csv_output,
