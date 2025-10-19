@@ -201,7 +201,7 @@ def get_trend_graph_for_festival(festival_name: str):
         # 여기서는 축제 기간 정보 없이 호출합니다.
         # 필요하다면, festival_loader 등을 통해 축제 기간을 조회하는 로직을 추가할 수 있습니다.
         graph = create_trend_graph(festival_name)
-        return gr.update(value=graph, visible=graph is not None)
+        return graph
     except Exception as e:
         print(f"트렌드 그래프 생성 중 오류 ({festival_name}): {e}")
         traceback.print_exc()

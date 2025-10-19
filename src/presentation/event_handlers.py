@@ -1,12 +1,21 @@
 # src/presentation/event_handlers.py
 import gradio as gr
 import pandas as pd
+import os
 # 분리된 모듈 임포트
 from ..data import festival_loader
 from ..infrastructure.reporting.charts import create_donut_chart, create_sentence_score_bar_chart
 from ..application.utils import change_page # utils에서 임포트
 from ..application.result_packager import package_festival_details # result_packager에서 임포트
 from ..application.analysis_service import get_trend_graph_for_festival
+from ..infrastructure.reporting.wordclouds import create_wordcloud
+
+SEASON_EN_MAP = {
+    "봄": "spring",
+    "여름": "summer",
+    "가을": "fall",
+    "겨울": "winter"
+}
 
 def update_individual_charts(evt: gr.SelectData, df_full: pd.DataFrame, judgments_list: list, page_num: int):
     """모든 블로그 표 클릭을 처리하는 통합 핸들러"""
@@ -41,7 +50,7 @@ def update_individual_charts(evt: gr.SelectData, df_full: pd.DataFrame, judgment
         return gr.update(value=donut_chart, visible=True), gr.update(value=score_chart, visible=True), gr.update(value=summary_text, visible=True), gr.update(open=True, visible=True)
         
     except IndexError:
-         print(f"오류: 인덱스 범위 초과 - page_num={page_num}, evt.index={evt.index}, df_len={len(df_full)}, judge_len={len(judgments_list)}")
+         print(f"오류: 인덱스 범위 초과 - page_num={page_num}, evt.index={evt.index}, df_len={len(df_full)}, results_len={len(festival_full_results)}")
          return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False, open=False)
     except Exception as e:
          print(f"update_individual_charts 오류: {e}")
@@ -53,7 +62,7 @@ def update_individual_charts(evt: gr.SelectData, df_full: pd.DataFrame, judgment
 def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, festival_full_results: list, page_num: int):
     """축제 표 클릭 핸들러"""
     if not evt.value or not isinstance(festival_full_results, list) or not festival_full_results:
-        return [gr.update(visible=False)] * 9
+        return [gr.update(visible=False)] * 10
 
     PAGE_SIZE = 10
     try:
@@ -61,7 +70,7 @@ def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, fes
         
         if not (0 <= actual_index < len(df_full) and 0 <= actual_index < len(festival_full_results)):
              print(f"오류: 잘못된 인덱스 접근 시도 (축제) - actual_index={actual_index}, df_len={len(df_full)}, results_len={len(festival_full_results)}")
-             return [gr.update(visible=False)] * 9
+             return [gr.update(visible=False)] * 10
 
         selected_row = df_full.iloc[actual_index]
         festival_name = selected_row.get("축제명", "이름 없음")
@@ -69,29 +78,50 @@ def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, fes
 
         if not isinstance(selected_festival_result, dict):
              print(f"오류: festival_full_results의 요소가 dict가 아님 - index={actual_index}, type={type(selected_festival_result)}")
-             return [f"오류: 축제 '{festival_name}'의 상세 데이터 형식 오류"] + [gr.update(visible=False)] * 8
+             return [f"오류: 축제 '{festival_name}'의 상세 데이터 형식 오류"] + [gr.update(visible=False)] * 9
 
-        # 트렌드 그래프 생성
-        trend_graph = get_trend_graph_for_festival(festival_name)
+        # 워드클라우드 및 트렌드 그래프 생성
+        festival_text = "\n".join(selected_festival_result.get("seasonal_texts", {}).values())
         
-        # 기존 상세 정보 패키징
+        # Determine dominant season for mask
+        seasonal_data = selected_festival_result.get("seasonal_data", {})
+        dominant_season = "정보없음"
+        max_activity = -1
+        for season, data in seasonal_data.items():
+            current_activity = data.get("pos", 0) + data.get("neg", 0)
+            if current_activity > max_activity:
+                max_activity = current_activity
+                dominant_season = season
+        
+        wordcloud_mask_path = None
+        if dominant_season != "정보없음":
+            season_en = SEASON_EN_MAP.get(dominant_season)
+            if season_en:
+                wordcloud_mask_path = os.path.abspath(os.path.join("assets", f"mask_{season_en}.png"))
+
+        wordcloud_path = create_wordcloud(festival_text, festival_name, mask_path=wordcloud_mask_path)
+
+        trend_graph_path = get_trend_graph_for_festival(festival_name)
+        
+        # 기존 상세 정보 패키징 (워드클라우드 제외)
         packaged_details = package_festival_details(selected_festival_result, festival_name)
 
-        # 트렌드 그래프를 포함하여 반환
-        return_values = [trend_graph] + packaged_details
-        print(f"[EventHandler Debug] Returning {len(return_values)} values for festival details.")
-        return return_values
-        print(f"[Event Handler Debug] Returning {len(return_values)} values for festival details.")
+        # 워드클라우드, 트렌드 그래프를 포함하여 반환
+        return_values = [
+            gr.update(value=wordcloud_path, visible=wordcloud_path is not None),
+            gr.update(value=trend_graph_path, visible=trend_graph_path is not None)
+        ] + packaged_details
+        
         return return_values
         
     except IndexError:
          print(f"오류: 인덱스 범위 초과 (축제) - page_num={page_num}, evt.index={evt.index}, df_len={len(df_full)}, results_len={len(festival_full_results)}")
-         return [gr.update(visible=False)] * 9
+         return [gr.update(visible=False)] * 10
     except Exception as e:
          print(f"update_festival_detail_charts 오류: {e}")
          import traceback
          traceback.print_exc()
-         return [gr.update(visible=False)] * 9
+         return [gr.update(visible=False)] * 10
 
 
 # --- 드롭다운 업데이트 함수들 ---
@@ -106,6 +136,3 @@ def update_cat3_choices(cat1, cat2):
 def update_festival_choices(cat1, cat2, cat3):
     festivals = festival_loader.get_festivals(cat1, cat2, cat3)
     return gr.update(choices=festivals, value=None, interactive=bool(festivals))
-
-# change_page 함수는 utils.py에서 임포트하여 사용
-# package_festival_details 함수는 result_packager.py에서 임포트하여 사용

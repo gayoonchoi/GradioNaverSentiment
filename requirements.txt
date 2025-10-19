@@ -17,3 +17,5 @@ langchain-google-genai
 matplotlib
 # For Word document generation
 python-docx
+wordcloud
+Pillow
