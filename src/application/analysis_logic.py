@@ -16,7 +16,6 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
     max_candidates = max(50, num_reviews * 10)
     candidate_blogs, blog_results_list, all_negative_sentences = [], [], []
     blog_judgments_list = []
-    # '주체-감성' 쌍을 계절별로 저장할 딕셔너리 추가
     seasonal_aspect_pairs = {"봄": [], "여름": [], "가을": [], "겨울": [], "정보없음": []}
     seasonal_texts = {"봄": [], "여름": [], "가을": [], "겨울": [], "정보없음": []}
     total_pos, total_neg, total_searched, start_index = 0, 0, 0, 1
@@ -75,7 +74,6 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
             season = get_season(blog_data.get('postdate', ''))
             seasonal_texts[season].append(content)
             
-            # LLM에서 추출한 '주체-감성' 쌍을 계절에 맞게 추가
             aspect_pairs = final_state.get("aspect_sentiment_pairs", [])
             if aspect_pairs:
                 seasonal_aspect_pairs[season].extend(aspect_pairs)
@@ -129,14 +127,12 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
         "url_markdown": f"### 분석된 블로그 URL ({len(valid_blogs_data)}개)\n" + "\n".join([f"- [{b['title']}]({b['link']})" for b in valid_blogs_data]),
         "trend_graph": create_trend_graph(keyword),
         "seasonal_texts": {k: "\n".join(v) for k, v in seasonal_texts.items()},
-        # 최종 결과에 '주체-감성' 쌍 딕셔너리 추가
         "seasonal_aspect_pairs": seasonal_aspect_pairs
     }
 
-def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details, progress: gr.Progress, initial_progress, total_steps):
-    festivals_to_analyze = festival_loader.get_festivals(cat1, cat2, cat3)
-    category_name = cat3 or cat2 or cat1
-    if not festivals_to_analyze: return {"error": f"'{category_name}' 카테고리에서 분석할 축제를 찾을 수 없습니다."}
+# 핵심 분석 로직을 담는 새 함수
+def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str, num_reviews: int, driver, log_details: bool, progress: gr.Progress, initial_progress: float, total_steps: int):
+    if not festivals_to_analyze: return {"error": f"'{group_name}' 그룹에서 분석할 축제를 찾을 수 없습니다."}
 
     category_results, all_blog_posts_list = [], []
     festival_full_results = []
@@ -145,7 +141,6 @@ def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details
     agg_seasonal = {"봄": {"pos": 0, "neg": 0}, "여름": {"pos": 0, "neg": 0}, "가을": {"pos": 0, "neg": 0}, "겨울": {"pos": 0, "neg": 0}, "정보없음": {"pos": 0, "neg": 0}}
     agg_negative_sentences = []
     agg_seasonal_texts = {"봄": [], "여름": [], "가을": [], "겨울": [], "정보없음": []}
-    # 카테고리 전체의 '주체-감성' 쌍을 집계할 딕셔너리 추가
     agg_seasonal_aspect_pairs = {"봄": [], "여름": [], "가을": [], "겨울": [], "정보없음": []}
 
     total_festivals = len(festivals_to_analyze)
@@ -153,7 +148,7 @@ def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details
         def nested_progress_callback(p, desc=""):
             progress(initial_progress + (i + p) / total_festivals / total_steps, desc=f"분석 중: {festival_name} ({i+1}/{total_festivals}) - {desc}")
 
-        result = analyze_single_keyword_fully(festival_name, num_reviews, driver, log_details, nested_progress_callback, "카테고리 분석")
+        result = analyze_single_keyword_fully(festival_name, num_reviews, driver, log_details, nested_progress_callback, "그룹 분석")
         
         if "error" in result or result.get("blog_results_df", pd.DataFrame()).empty:
             print(f"   [{festival_name}] 분석 결과가 없거나 오류 발생.")
@@ -168,7 +163,6 @@ def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details
         agg_strong_neg += result.get("total_strong_neg", 0)
         agg_negative_sentences.extend(result.get("negative_sentences", []))
         
-        # 개별 축제의 '주체-감성' 쌍을 카테고리 전체 집계에 추가
         for season, pairs in result.get("seasonal_aspect_pairs", {}).items():
             if pairs:
                 agg_seasonal_aspect_pairs[season].extend(pairs)
@@ -198,7 +192,7 @@ def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details
             all_blog_posts_list.append(result["blog_results_df"])
 
     if not category_results: 
-        return {"error": f"선택된 카테고리 '{category_name}' 내 모든 축제({total_festivals}개)에서 유효한 분석 결과를 얻지 못했습니다."}
+        return {"error": f"선택된 그룹 '{group_name}' 내 모든 축제({total_festivals}개)에서 유효한 분석 결과를 얻지 못했습니다."}
 
     total_sentiment_frequency = agg_pos + agg_neg
     total_sentiment_score = ((agg_strong_pos - agg_strong_neg) / total_sentiment_frequency * 50 + 50) if total_sentiment_frequency > 0 else 50.0
@@ -214,10 +208,15 @@ def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details
         "seasonal_data": agg_seasonal,
         "negative_sentences": agg_negative_sentences,
         "seasonal_texts": {k: "\n".join(v) for k, v in agg_seasonal_texts.items()},
-        # 카테고리 전체 결과에 집계된 '주체-감성' 쌍 추가
         "seasonal_aspect_pairs": agg_seasonal_aspect_pairs,
         "individual_festival_results_df": final_category_df,
         "all_blog_posts_df": final_all_blogs_df,
         "festival_full_results": festival_full_results, 
         "all_blog_judgments": [j for res in festival_full_results for j in res.get("blog_judgments", [])]
     }
+
+# 기존 함수는 새로 만든 그룹 분석 함수를 호출하는 래퍼(wrapper)가 됨
+def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details, progress: gr.Progress, initial_progress, total_steps):
+    festivals_to_analyze = festival_loader.get_festivals(cat1, cat2, cat3)
+    category_name = cat3 or cat2 or cat1
+    return perform_festival_group_analysis(festivals_to_analyze, category_name, num_reviews, driver, log_details, progress, initial_progress, total_steps)

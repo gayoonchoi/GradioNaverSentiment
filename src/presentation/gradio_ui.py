@@ -6,7 +6,7 @@ from .ui_tabs import (
     build_keyword_comparison_tab,
     build_category_analysis_tab,
     build_category_comparison_tab,
-    build_selected_festival_tab
+    build_custom_group_analysis_tab
 )
 
 def create_ui():
@@ -20,6 +20,6 @@ def create_ui():
             build_keyword_comparison_tab()
             build_category_analysis_tab()
             build_category_comparison_tab()
-            build_selected_festival_tab()
+            build_custom_group_analysis_tab()
 
     return demo
