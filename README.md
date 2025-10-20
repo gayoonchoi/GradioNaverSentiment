@@ -69,12 +69,74 @@
 
 ## 🏗️ 아키텍처 설명
 
+### 1. 클린 아키텍처 (Clean Architecture)
+
 프로젝트 전체가 클린 아키텍처 원칙에 따라 리팩토링되었습니다. 코드는 역할과 의존성 방향에 따라 `src` 폴더 내의 `domain`, `application`, `infrastructure`, `presentation` 레이어로 명확하게 분리되어, 코드의 결합도는 낮추고 응집도는 높인 유연한 구조를 갖추고 있습니다.
+
+```
+C:\Users\SBA\github\GradioNaverSentiment\
+└── src
+    ├── application/     # 애플리케이션의 핵심 비즈니스 로직 (Use Cases)
+    ├── data/            # 데이터 로딩 및 관리
+    ├── domain/          # 핵심 도메인 모델 (Entities)
+    ├── infrastructure/  # 외부 서비스/라이브러리와의 연동 (DB, API, Scraper)
+    └── presentation/    # 사용자 인터페이스 (UI)
+```
+
+### 2. 분석 워크플로우
+
+본 애플리케이션의 분석 과정은 두 단계의 워크플로우로 구성됩니다.
+
+**A. 상위 워크플로우: 분석 총괄**
+
+사용자가 UI에서 분석을 시작하면, `Service Layer`가 전체 분석 과정을 조율합니다. 카테고리 분석의 경우, 해당 카테고리의 모든 축제에 대해 B 워크플로우를 반복 호출하고 결과를 취합합니다.
+
+```mermaid
+graph TD
+    subgraph "UI Layer"
+        A[1. 사용자, 분석 시작]
+    end
+    subgraph "Service Layer (Orchestrator)"
+        B[2. 분석 요청 접수]
+        C[3. Loop: 분석 대상 목록 반복]
+        D{4. 개별 대상 분석 요청}
+        E[6. 모든 결과 취합 및 종합]
+    end
+    subgraph "Core Workflow (per Item)"
+        F[5. B. 개별 아이템 분석 워크플로우]
+    end
+    subgraph "UI Layer"
+        G[7. 최종 결과 표시]
+    end
+    A --> B --> C --> D --> F --> D --> C --> E --> G
+```
+
+**B. 핵심 워크플로우: 단일 블로그 분석 (LangGraph)**
+
+개별 블로그 포스트 하나를 분석하는 핵심 로직입니다. `LangGraph` 기반의 에이전트들이 "검증 → 주체/감성 추출 → 채점"의 파이프라인을 수행하며, 자체 피드백 루프를 통해 분석의 정확도를 높입니다. (Summarizer가 Aspect Extractor로 역할 변경)
+
+```mermaid
+graph TD
+    A[블로그 본문] --> B(Content Validator);
+    B --> C{주제 관련성?};
+    C -- 관련 없음 --> D[분석 중단];
+    C -- 관련 있음 --> E(LLM Aspect Extractor);
+    E --> F(Rule Scorer);
+    F --> G{점수-감성 일치?};
+    G -- No --> H[피드백과 함께 재추출 요청];
+    H --> E;
+    G -- Yes --> I{신규 감성 단어?};
+    I -- Yes --> J(Dynamic Scorer: 사전 학습);
+    J --> F;
+    I -- No --> K[분석 결과 확정];
+```
 
 ## ⚙️ 설치 및 실행 방법
 
 ### 1. 환경 설정
+
 프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 아래와 같이 API 키를 설정합니다.
+
 ```
 NAVER_CLIENT_ID=YOUR_NAVER_CLIENT_ID
 NAVER_CLIENT_SECRET=YOUR_NAVER_CLIENT_SECRET
@@ -84,15 +146,19 @@ GOOGLE_API_KEY=YOUR_GOOGLE_API_KEY
 ```
 
 ### 2. 의존성 설치
+
 Python 3.9 이상 환경에서 필요한 라이브러리를 설치합니다.
+
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 3. 애플리케이션 실행
+
 ```bash
 python app_llm.py
 ```
+
 터미널에 출력되는 URL(일반적으로 `http://127.0.0.1:7860`)로 접속하여 웹 UI를 사용할 수 있습니다.
 
 ## 🚀 활용 방법
@@ -103,7 +169,7 @@ python app_llm.py
     - `카테고리별 분석`: 분석할 카테고리를 `대분류`부터 순서대로 선택합니다.
     - `자유 그룹 비교 분석`: 각 그룹(A,B,C,D)별로 카테고리를 선택하거나, 축제를 직접 다중 선택합니다. (카테고리만 선택 시 해당 카테고리 전체 분석)
 3.  **분석 시작**: `분석 시작` 버튼을 클릭하여 분석을 실행합니다.
-4.  **결과 확인 및 다운로드**: 
+4.  **결과 확인 및 다운로드**:
     - 분석이 완료되면 종합 분석 결과와 상세 테이블이 화면에 표시됩니다.
     - 각 결과물 옆에 있는 **다운로드 버튼**을 클릭하여 원하는 데이터를 CSV 파일로 저장할 수 있습니다.
 5.  **(선택) 상세 로그 확인**: 에이전트의 자세한 작동 과정이 궁금하다면, '상세 로그 출력' 체크박스를 선택하고 분석을 실행하세요. 터미널에 모든 처리 과정이 출력됩니다.
