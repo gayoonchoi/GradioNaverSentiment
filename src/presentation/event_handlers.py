@@ -8,7 +8,8 @@ from ..infrastructure.reporting.charts import create_donut_chart, create_sentenc
 from ..application.utils import change_page # utils에서 임포트
 from ..application.result_packager import package_festival_details # result_packager에서 임포트
 from ..application.analysis_service import get_trend_graph_for_festival
-from ..infrastructure.reporting.wordclouds import create_wordcloud
+# create_wordcloud 대신 create_sentiment_wordclouds를 임포트
+from ..infrastructure.reporting.wordclouds import create_sentiment_wordclouds
 
 SEASON_EN_MAP = {
     "봄": "spring",
@@ -61,8 +62,10 @@ def update_individual_charts(evt: gr.SelectData, df_full: pd.DataFrame, judgment
 
 def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, festival_full_results: list, page_num: int):
     """축제 표 클릭 핸들러"""
+    # 출력 개수가 1개(부정 WC) 늘어났으므로 11로 수정
+    num_outputs = 11
     if not evt.value or not isinstance(festival_full_results, list) or not festival_full_results:
-        return [gr.update(visible=False)] * 10
+        return [gr.update(visible=False)] * num_outputs
 
     PAGE_SIZE = 10
     try:
@@ -70,7 +73,7 @@ def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, fes
         
         if not (0 <= actual_index < len(df_full) and 0 <= actual_index < len(festival_full_results)):
              print(f"오류: 잘못된 인덱스 접근 시도 (축제) - actual_index={actual_index}, df_len={len(df_full)}, results_len={len(festival_full_results)}")
-             return [gr.update(visible=False)] * 10
+             return [gr.update(visible=False)] * num_outputs
 
         selected_row = df_full.iloc[actual_index]
         festival_name = selected_row.get("축제명", "이름 없음")
@@ -78,12 +81,16 @@ def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, fes
 
         if not isinstance(selected_festival_result, dict):
              print(f"오류: festival_full_results의 요소가 dict가 아님 - index={actual_index}, type={type(selected_festival_result)}")
-             return [f"오류: 축제 '{festival_name}'의 상세 데이터 형식 오류"] + [gr.update(visible=False)] * 9
+             return [f"오류: 축제 '{festival_name}'의 상세 데이터 형식 오류"] + [gr.update(visible=False)] * (num_outputs - 1)
 
-        # 워드클라우드 및 트렌드 그래프 생성
-        festival_text = "\n".join(selected_festival_result.get("seasonal_texts", {}).values())
+        # 워드클라우드 생성을 위해 모든 계절의 '주체-감성' 쌍을 하나로 합침
+        all_pairs = []
+        seasonal_pairs = selected_festival_result.get("seasonal_aspect_pairs", {})
+        for pairs in seasonal_pairs.values():
+            if pairs:
+                all_pairs.extend(pairs)
         
-        # Determine dominant season for mask
+        # 마스크 결정을 위한 주 계절 탐색
         seasonal_data = selected_festival_result.get("seasonal_data", {})
         dominant_season = "정보없음"
         max_activity = -1
@@ -98,8 +105,12 @@ def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, fes
             season_en = SEASON_EN_MAP.get(dominant_season)
             if season_en:
                 wordcloud_mask_path = os.path.abspath(os.path.join("assets", f"mask_{season_en}.png"))
+        else:
+            # 주 계절 정보가 없을 경우, 기본 마스크(가을)를 사용
+            wordcloud_mask_path = os.path.abspath(os.path.join("assets", "mask_fall.png"))
 
-        wordcloud_path = create_wordcloud(festival_text, festival_name, mask_path=wordcloud_mask_path)
+        # 새로운 워드클라우드 함수 호출
+        pos_wc_path, neg_wc_path = create_sentiment_wordclouds(all_pairs, festival_name, mask_path=wordcloud_mask_path)
 
         trend_graph_path = get_trend_graph_for_festival(festival_name)
         
@@ -108,7 +119,8 @@ def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, fes
 
         # 워드클라우드, 트렌드 그래프를 포함하여 반환
         return_values = [
-            gr.update(value=wordcloud_path, visible=wordcloud_path is not None),
+            gr.update(value=pos_wc_path, visible=pos_wc_path is not None),
+            gr.update(value=neg_wc_path, visible=neg_wc_path is not None),
             gr.update(value=trend_graph_path, visible=trend_graph_path is not None)
         ] + packaged_details
         
@@ -116,20 +128,20 @@ def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, fes
         
     except IndexError:
          print(f"오류: 인덱스 범위 초과 (축제) - page_num={page_num}, evt.index={evt.index}, df_len={len(df_full)}, results_len={len(festival_full_results)}")
-         return [gr.update(visible=False)] * 10
+         return [gr.update(visible=False)] * num_outputs
     except Exception as e:
          print(f"update_festival_detail_charts 오류: {e}")
          import traceback
          traceback.print_exc()
-         return [gr.update(visible=False)] * 10
+         return [gr.update(visible=False)] * num_outputs
 
 
 # --- 드롭다운 업데이트 함수들 ---
-def update_cat2_choices(cat1): 
+def update_cat2_choices(cat1):
     choices = festival_loader.get_cat2_choices(cat1)
     return gr.update(choices=choices, value=None, interactive=bool(choices))
 
-def update_cat3_choices(cat1, cat2): 
+def update_cat3_choices(cat1, cat2):
     choices = festival_loader.get_cat3_choices(cat1, cat2)
     return gr.update(choices=choices, value=None, interactive=bool(choices))
 

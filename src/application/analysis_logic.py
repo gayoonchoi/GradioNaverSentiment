@@ -16,6 +16,8 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
     max_candidates = max(50, num_reviews * 10)
     candidate_blogs, blog_results_list, all_negative_sentences = [], [], []
     blog_judgments_list = []
+    # '주체-감성' 쌍을 계절별로 저장할 딕셔너리 추가
+    seasonal_aspect_pairs = {"봄": [], "여름": [], "가을": [], "겨울": [], "정보없음": []}
     seasonal_texts = {"봄": [], "여름": [], "가을": [], "겨울": [], "정보없음": []}
     total_pos, total_neg, total_searched, start_index = 0, 0, 0, 1
     total_strong_pos, total_strong_neg = 0, 0
@@ -72,6 +74,12 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
 
             season = get_season(blog_data.get('postdate', ''))
             seasonal_texts[season].append(content)
+            
+            # LLM에서 추출한 '주체-감성' 쌍을 계절에 맞게 추가
+            aspect_pairs = final_state.get("aspect_sentiment_pairs", [])
+            if aspect_pairs:
+                seasonal_aspect_pairs[season].extend(aspect_pairs)
+
             blog_judgments_list.append(judgments)
             pos_count = sum(1 for res in judgments if res["final_verdict"] == "긍정")
             neg_count = sum(1 for res in judgments if res["final_verdict"] == "부정")
@@ -120,7 +128,9 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
         "blog_judgments": blog_judgments_list,
         "url_markdown": f"### 분석된 블로그 URL ({len(valid_blogs_data)}개)\n" + "\n".join([f"- [{b['title']}]({b['link']})" for b in valid_blogs_data]),
         "trend_graph": create_trend_graph(keyword),
-        "seasonal_texts": {k: "\n".join(v) for k, v in seasonal_texts.items()}
+        "seasonal_texts": {k: "\n".join(v) for k, v in seasonal_texts.items()},
+        # 최종 결과에 '주체-감성' 쌍 딕셔너리 추가
+        "seasonal_aspect_pairs": seasonal_aspect_pairs
     }
 
 def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details, progress: gr.Progress, initial_progress, total_steps):
@@ -135,6 +145,8 @@ def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details
     agg_seasonal = {"봄": {"pos": 0, "neg": 0}, "여름": {"pos": 0, "neg": 0}, "가을": {"pos": 0, "neg": 0}, "겨울": {"pos": 0, "neg": 0}, "정보없음": {"pos": 0, "neg": 0}}
     agg_negative_sentences = []
     agg_seasonal_texts = {"봄": [], "여름": [], "가을": [], "겨울": [], "정보없음": []}
+    # 카테고리 전체의 '주체-감성' 쌍을 집계할 딕셔너리 추가
+    agg_seasonal_aspect_pairs = {"봄": [], "여름": [], "가을": [], "겨울": [], "정보없음": []}
 
     total_festivals = len(festivals_to_analyze)
     for i, festival_name in enumerate(festivals_to_analyze):
@@ -155,6 +167,12 @@ def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details
         agg_strong_pos += result.get("total_strong_pos", 0)
         agg_strong_neg += result.get("total_strong_neg", 0)
         agg_negative_sentences.extend(result.get("negative_sentences", []))
+        
+        # 개별 축제의 '주체-감성' 쌍을 카테고리 전체 집계에 추가
+        for season, pairs in result.get("seasonal_aspect_pairs", {}).items():
+            if pairs:
+                agg_seasonal_aspect_pairs[season].extend(pairs)
+
         for season, texts in result.get("seasonal_texts", {}).items():
             if texts: agg_seasonal_texts[season].append(texts)
         for season, data in result.get("seasonal_data", {}).items():
@@ -196,6 +214,8 @@ def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details
         "seasonal_data": agg_seasonal,
         "negative_sentences": agg_negative_sentences,
         "seasonal_texts": {k: "\n".join(v) for k, v in agg_seasonal_texts.items()},
+        # 카테고리 전체 결과에 집계된 '주체-감성' 쌍 추가
+        "seasonal_aspect_pairs": agg_seasonal_aspect_pairs,
         "individual_festival_results_df": final_category_df,
         "all_blog_posts_df": final_all_blogs_df,
         "festival_full_results": festival_full_results, 

@@ -4,7 +4,8 @@ import pandas as pd
 import os
 from .utils import save_df_to_csv, change_page, summarize_negative_feedback
 from ..infrastructure.reporting.charts import create_donut_chart, create_stacked_bar_chart
-from ..infrastructure.reporting.wordclouds import create_wordcloud
+# create_wordcloud 대신 create_sentiment_wordclouds를 임포트
+from ..infrastructure.reporting.wordclouds import create_sentiment_wordclouds
 import traceback
 
 SEASON_EN_MAP = {
@@ -15,28 +16,34 @@ SEASON_EN_MAP = {
 }
 
 def package_keyword_results(results: dict, name: str):
-    num_outputs = 26
+    # 출력 개수가 4개(계절별 부정 WC) 늘어났으므로 29로 수정
+    num_outputs = 29
     if "error" in results: return [results["error"]] + [gr.update(visible=False)] * (num_outputs - 1)
 
     try:
-        seasonal_texts = results.get("seasonal_texts", {})
-        seasonal_wc_paths = {}
-        for season, text in seasonal_texts.items():
+        # seasonal_texts 대신 seasonal_aspect_pairs를 사용
+        seasonal_aspect_pairs = results.get("seasonal_aspect_pairs", {})
+        seasonal_pos_wc_paths = {}
+        seasonal_neg_wc_paths = {}
+        
+        # seasonal_aspect_pairs를 순회
+        for season, pairs in seasonal_aspect_pairs.items():
             season_en = SEASON_EN_MAP.get(season)
-            if text and season_en:
+            # 텍스트 유무가 아닌, 쌍(pair) 데이터 유무를 확인
+            if pairs and season_en:
                 mask_path = os.path.abspath(os.path.join("assets", f"mask_{season_en}.png"))
-                seasonal_wc_paths[season] = create_wordcloud(text, f"{name}_{season}", mask_path=mask_path)
+                # text 대신 pairs를 전달
+                pos_path, neg_path = create_sentiment_wordclouds(pairs, f"{name}_{season}", mask_path=mask_path)
+                seasonal_pos_wc_paths[season] = pos_path
+                seasonal_neg_wc_paths[season] = neg_path
             else:
-                seasonal_wc_paths[season] = None
+                seasonal_pos_wc_paths[season] = None
+                seasonal_neg_wc_paths[season] = None
 
         neg_summary_text = summarize_negative_feedback(results.get("negative_sentences", []))
         overall_summary_text = f"""- **긍정 문장 수**: {results.get('total_pos', 0)}개\n- **부정 문장 수**: {results.get('total_neg', 0)}개\n- **감성어 빈도 (긍정+부정)**: {results.get('total_sentiment_frequency', 0)}개\n- **감성 점수**: {results.get('total_sentiment_score', 50.0):.1f}점 (0~100점)"""
 
-        summary_df = pd.DataFrame([{
-            '검색어': name, '감성 빈도': results.get('total_sentiment_frequency', 0),
-            '감성 점수': f"{results.get('total_sentiment_score', 50.0):.1f}",
-            '긍정 문장 수': results.get("total_pos", 0), '부정 문장 수': results.get("total_neg", 0)
-        }])
+        summary_df = pd.DataFrame([{'검색어': name, '감성 빈도': results.get('total_sentiment_frequency', 0), '감성 점수': f"{results.get('total_sentiment_score', 50.0):.1f}", '긍정 문장 수': results.get("total_pos", 0), '부정 문장 수': results.get("total_neg", 0)}])
         summary_csv = save_df_to_csv(summary_df, "overall_summary", name)
         blog_df = results.get("blog_results_df", pd.DataFrame())
         blog_list_csv = save_df_to_csv(blog_df, "blog_list", name)
@@ -62,10 +69,16 @@ def package_keyword_results(results: dict, name: str):
             gr.update(value=create_stacked_bar_chart(summer_pos, summer_neg, "여름 시즌"), visible=summer_pos > 0 or summer_neg > 0),
             gr.update(value=create_stacked_bar_chart(autumn_pos, autumn_neg, "가을 시즌"), visible=autumn_pos > 0 or autumn_neg > 0),
             gr.update(value=create_stacked_bar_chart(winter_pos, winter_neg, "겨울 시즌"), visible=winter_pos > 0 or winter_neg > 0),
-            gr.update(value=seasonal_wc_paths.get("봄"), visible=seasonal_wc_paths.get("봄") is not None),
-            gr.update(value=seasonal_wc_paths.get("여름"), visible=seasonal_wc_paths.get("여름") is not None),
-            gr.update(value=seasonal_wc_paths.get("가을"), visible=seasonal_wc_paths.get("가을") is not None),
-            gr.update(value=seasonal_wc_paths.get("겨울"), visible=seasonal_wc_paths.get("겨울") is not None),
+            
+            gr.update(value=seasonal_pos_wc_paths.get("봄"), visible=seasonal_pos_wc_paths.get("봄") is not None),
+            gr.update(value=seasonal_neg_wc_paths.get("봄"), visible=seasonal_neg_wc_paths.get("봄") is not None),
+            gr.update(value=seasonal_pos_wc_paths.get("여름"), visible=seasonal_pos_wc_paths.get("여름") is not None),
+            gr.update(value=seasonal_neg_wc_paths.get("여름"), visible=seasonal_neg_wc_paths.get("여름") is not None),
+            gr.update(value=seasonal_pos_wc_paths.get("가을"), visible=seasonal_pos_wc_paths.get("가을") is not None),
+            gr.update(value=seasonal_neg_wc_paths.get("가을"), visible=seasonal_neg_wc_paths.get("가을") is not None),
+            gr.update(value=seasonal_pos_wc_paths.get("겨울"), visible=seasonal_pos_wc_paths.get("겨울") is not None),
+            gr.update(value=seasonal_neg_wc_paths.get("겨울"), visible=seasonal_neg_wc_paths.get("겨울") is not None),
+            
             initial_page_df, df_for_state, results.get("blog_judgments", []),
             current_page, total_pages_str,
             gr.update(value=blog_list_csv, visible=blog_list_csv is not None),
@@ -77,28 +90,28 @@ def package_keyword_results(results: dict, name: str):
         return [f"오류: {e}"] + [gr.update(visible=False)] * (num_outputs - 1)
 
 def package_category_results(results: dict, name: str):
-    num_outputs = 40
+    num_outputs = 44
     if "error" in results: return [results["error"]] + [gr.update(visible=False)] * (num_outputs - 1)
 
     try:
-        seasonal_texts = results.get("seasonal_texts", {})
-        seasonal_wc_paths = {}
-        for season, text in seasonal_texts.items():
+        seasonal_aspect_pairs = results.get("seasonal_aspect_pairs", {})
+        seasonal_pos_wc_paths = {}
+        seasonal_neg_wc_paths = {}
+        for season, pairs in seasonal_aspect_pairs.items():
             season_en = SEASON_EN_MAP.get(season)
-            if text and season_en:
+            if pairs and season_en:
                 mask_path = os.path.abspath(os.path.join("assets", f"mask_{season_en}.png"))
-                seasonal_wc_paths[season] = create_wordcloud(text, f"{name}_{season}", mask_path=mask_path)
+                pos_path, neg_path = create_sentiment_wordclouds(pairs, f"{name}_{season}", mask_path=mask_path)
+                seasonal_pos_wc_paths[season] = pos_path
+                seasonal_neg_wc_paths[season] = neg_path
             else:
-                seasonal_wc_paths[season] = None
+                seasonal_pos_wc_paths[season] = None
+                seasonal_neg_wc_paths[season] = None
 
         cat_neg_summary_text = summarize_negative_feedback(results.get("negative_sentences", []))
         cat_overall_summary_text = f"""- **긍정 문장 수**: {results.get('total_pos', 0)}개\n- **부정 문장 수**: {results.get('total_neg', 0)}개\n- **감성어 빈도 (긍정+부정)**: {results.get('total_sentiment_frequency', 0)}개\n- **감성 점수**: {results.get('total_sentiment_score', 50.0):.1f}점 (0~100점)"""
 
-        summary_df = pd.DataFrame([{
-            '카테고리': name, '감성 빈도': results.get('total_sentiment_frequency', 0),
-            '감성 점수': f"{results.get('total_sentiment_score', 50.0):.1f}",
-            '긍정 문장 수': results.get("total_pos", 0), '부정 문장 수': results.get("total_neg", 0)
-        }])
+        summary_df = pd.DataFrame([{'카테고리': name, '감성 빈도': results.get('total_sentiment_frequency', 0), '감성 점수': f"{results.get('total_sentiment_score', 50.0):.1f}", '긍정 문장 수': results.get("total_pos", 0), '부정 문장 수': results.get("total_neg", 0)}])
         cat_overall_csv = save_df_to_csv(summary_df, "category_summary", name)
 
         festival_df = results.get("individual_festival_results_df", pd.DataFrame())
@@ -126,15 +139,26 @@ def package_category_results(results: dict, name: str):
             gr.update(value=create_stacked_bar_chart(cat_summer_pos, cat_summer_neg, "여름 시즌"), visible=cat_summer_pos > 0 or cat_summer_neg > 0),
             gr.update(value=create_stacked_bar_chart(cat_autumn_pos, cat_autumn_neg, "가을 시즌"), visible=cat_autumn_pos > 0 or cat_autumn_neg > 0),
             gr.update(value=create_stacked_bar_chart(cat_winter_pos, cat_winter_neg, "겨울 시즌"), visible=cat_winter_pos > 0 or cat_winter_neg > 0),
-            gr.update(value=seasonal_wc_paths.get("봄"), visible=seasonal_wc_paths.get("봄") is not None),
-            gr.update(value=seasonal_wc_paths.get("여름"), visible=seasonal_wc_paths.get("여름") is not None),
-            gr.update(value=seasonal_wc_paths.get("가을"), visible=seasonal_wc_paths.get("가을") is not None),
-            gr.update(value=seasonal_wc_paths.get("겨울"), visible=seasonal_wc_paths.get("겨울") is not None),
+            
+            gr.update(value=seasonal_pos_wc_paths.get("봄"), visible=seasonal_pos_wc_paths.get("봄") is not None),
+            gr.update(value=seasonal_neg_wc_paths.get("봄"), visible=seasonal_neg_wc_paths.get("봄") is not None),
+            gr.update(value=seasonal_pos_wc_paths.get("여름"), visible=seasonal_pos_wc_paths.get("여름") is not None),
+            gr.update(value=seasonal_neg_wc_paths.get("여름"), visible=seasonal_neg_wc_paths.get("여름") is not None),
+            gr.update(value=seasonal_pos_wc_paths.get("가을"), visible=seasonal_pos_wc_paths.get("가을") is not None),
+            gr.update(value=seasonal_neg_wc_paths.get("가을"), visible=seasonal_neg_wc_paths.get("가을") is not None),
+            gr.update(value=seasonal_pos_wc_paths.get("겨울"), visible=seasonal_pos_wc_paths.get("겨울") is not None),
+            gr.update(value=seasonal_neg_wc_paths.get("겨울"), visible=seasonal_neg_wc_paths.get("겨울") is not None),
+
             festival_page_df, festival_df, results.get("festival_full_results", []), festival_page_num, festival_pages_str,
             gr.update(value=festival_list_csv, visible=festival_list_csv is not None),
+            
             gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
-            gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False, open=False),
-            blog_page_df, all_blogs_df, results.get("all_blog_judgments", []), blog_page_num, blog_pages_str, gr.update(visible=False),
+            gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), 
+            gr.update(visible=False, open=False),
+            
+            blog_page_df, all_blogs_df, results.get("all_blog_judgments", []), blog_page_num, blog_pages_str, 
+            gr.update(value=all_blogs_list_csv, visible=all_blogs_list_csv is not None),
+            
             gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False, open=False)
         )
 

@@ -10,3 +10,4 @@ class LLMGraphState(TypedDict):
     final_judgments: List[Dict]
     feedback_message: str | None
     re_summarize_count: int
+    aspect_sentiment_pairs: List[tuple]  # (주체, 감성표현) 쌍을 저장
