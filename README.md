@@ -177,7 +177,7 @@ python app_llm.py
 ## 시연 영상
 
 **Part 1**
-<img src="videos/demo-part-1.gif" alt="시연 영상 1" style="max-width: 730px;">
+<img src="videos/demo-part-1.gif" alt="시연 영상 1" style="max-width: 1460px;">
 
 **Part 2**
-<img src="videos/demo-part-2.gif" alt="시연 영상 2" style="max-width: 730px;">
+<img src="videos/demo-part-2.gif" alt="시연 영상 2" style="max-width: 1460px;">
