@@ -177,7 +177,7 @@ python app_llm.py
 ## 시연 영상
 
 **Part 1**
-[Part 1 시연 영상 보기](videos/bandicam 2025-10-30 14-40-25-232 - 1of2.mp4)
+![시연 영상 1](videos/demo-part1.gif)
 
 **Part 2**
-[Part 2 시연 영상 보기](videos/bandicam 2025-10-30 14-40-25-232 - 2of2.mp4)
+![시연 영상 2](videos/demo-part2.gif)
