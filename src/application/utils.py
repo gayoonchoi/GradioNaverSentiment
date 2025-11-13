@@ -55,6 +55,78 @@ def save_df_to_csv(df: pd.DataFrame, base_name: str, keyword: str) -> str:
         print(f"CSV 저장 중 오류 ({keyword}): {e}")
         return None
 
+def create_festinsight_table(results: dict, keyword: str) -> pd.DataFrame:
+    """FestInsight_Analysis_Table 형식의 통합 데이터프레임을 생성합니다."""
+    try:
+        # DB에서 축제 상세 정보 가져오기
+        from ..infrastructure.web.tour_api_client import get_festival_details
+        festival_details = get_festival_details(keyword)
+
+        # 기본 정보는 results에서 가져옴
+        trend_metrics = results.get("trend_metrics", {})
+
+        table_data = {
+            'keyword': keyword,
+            'addr1': festival_details.get('addr1', 'N/A') if festival_details else 'N/A',
+            'addr2': festival_details.get('addr2', 'N/A') if festival_details else 'N/A',
+            'areaCode': festival_details.get('areacode', 'N/A') if festival_details else 'N/A',
+            'eventStartDate': results.get('festival_start_date').strftime('%Y%m%d') if results.get('festival_start_date') else 'N/A',
+            'eventEndDate': results.get('festival_end_date').strftime('%Y%m%d') if results.get('festival_end_date') else 'N/A',
+            'eventPeriod': results.get('event_period', 'N/A'),
+            'trend_index': trend_metrics.get('trend_index', 0),
+            'sentiment_score': round(results.get('total_sentiment_score', 50.0), 2),
+            'positive_ratio': round((results.get('total_pos', 0) / results.get('total_sentiment_frequency', 1)) * 100, 2) if results.get('total_sentiment_frequency', 0) > 0 else 0,
+            'negative_ratio': round((results.get('total_neg', 0) / results.get('total_sentiment_frequency', 1)) * 100, 2) if results.get('total_sentiment_frequency', 0) > 0 else 0,
+            'complaint_factor': '주요 불만 사항 참조',  # 별도 요약 텍스트로 제공
+            'satisfaction_delta': round(results.get('satisfaction_delta', 0), 2),
+            'theme_sentiment_avg': 'N/A',  # 단일 키워드 분석에서는 해당 없음
+            'emotion_keyword_freq': str(results.get('emotion_keyword_freq', {}))
+        }
+
+        return pd.DataFrame([table_data])
+    except Exception as e:
+        print(f"FestInsight 테이블 생성 중 오류: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
+
+def create_festinsight_table_for_category(results: dict, category_name: str) -> pd.DataFrame:
+    """카테고리 분석 결과를 FestInsight_Analysis_Table 형식으로 변환합니다."""
+    try:
+        festival_results = results.get('individual_festival_results_df', pd.DataFrame())
+
+        if festival_results.empty:
+            return pd.DataFrame()
+
+        # 기존 축제 요약 데이터프레임을 FestInsight 형식으로 변환
+        table_data_list = []
+        for _, row in festival_results.iterrows():
+            table_data = {
+                'keyword': row.get('축제명', 'N/A'),
+                'addr1': 'N/A',
+                'addr2': 'N/A',
+                'areaCode': 'N/A',
+                'eventStartDate': 'N/A',
+                'eventEndDate': 'N/A',
+                'eventPeriod': row.get('축제 기간 (일)', 'N/A'),
+                'trend_index': row.get('트렌드 지수 (%)', 'N/A'),
+                'sentiment_score': row.get('감성 점수', 'N/A'),
+                'positive_ratio': row.get('긍정 비율 (%)', 'N/A'),
+                'negative_ratio': row.get('부정 비율 (%)', 'N/A'),
+                'complaint_factor': row.get('주요 불만 사항 요약', 'N/A')[:100] if pd.notna(row.get('주요 불만 사항 요약')) else 'N/A',
+                'satisfaction_delta': row.get('만족도 변화', 'N/A'),
+                'theme_sentiment_avg': results.get('theme_sentiment_avg', 'N/A'),
+                'emotion_keyword_freq': row.get('주요 감성 키워드', 'N/A')
+            }
+            table_data_list.append(table_data)
+
+        return pd.DataFrame(table_data_list)
+    except Exception as e:
+        print(f"카테고리 FestInsight 테이블 생성 중 오류: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
+
 def summarize_negative_feedback(sentences: list) -> str:
     if not sentences: return ""
     try:

@@ -10,7 +10,7 @@ from .utils import get_season, summarize_negative_feedback, calculate_trend_metr
 from ..application.graph import app_llm_graph
 from ..infrastructure.web.naver_api import search_naver_blog_page
 from ..infrastructure.web.scraper import scrape_blog_content
-from ..infrastructure.web.naver_trend_api import create_trend_graph
+from ..infrastructure.web.naver_trend_api import create_trend_graph, create_focused_trend_graph
 from ..infrastructure.web.tour_api_client import get_festival_period
 from collections import Counter
 
@@ -136,25 +136,40 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
 
     total_sentiment_frequency = total_pos + total_neg
     total_sentiment_score = ((total_strong_pos - total_strong_neg) / total_sentiment_frequency * 50 + 50) if total_sentiment_frequency > 0 else 50.0
-    
+
+    # 지난 1년 트렌드 그래프
     trend_graph_path, trend_df = create_trend_graph(keyword, festival_start_date=start_date, festival_end_date=end_date)
-    
+
+    # 집중 트렌드 그래프 (축제 기간이 없어도 최근 60일 트렌드 생성)
+    print(f"🔍 '{keyword}' 집중 트렌드 그래프 생성 시작...")
+    focused_trend_graph_path, focused_trend_df = create_focused_trend_graph(keyword, start_date, end_date)
+
+    if focused_trend_graph_path:
+        print(f"✅ '{keyword}' 집중 트렌드 그래프 생성 성공")
+    else:
+        print(f"⚠️ '{keyword}' 집중 트렌드 그래프 생성 실패")
+
     trend_metrics = calculate_trend_metrics(trend_df, start_date, end_date)
-    satisfaction_delta = total_sentiment_score - trend_metrics.get("trend_index", 0)
-    
+    # satisfaction_delta: 트렌드 대비 감성 증감 비율
+    # (감성점수 - 중립값) / 트렌드지수 * 100으로 계산
+    trend_index = trend_metrics.get("trend_index", 0)
+    satisfaction_delta = ((total_sentiment_score - 50) / (trend_index + 1e-6)) * 100 if trend_index > 0 else (total_sentiment_score - 50)
+
     emotion_keyword_freq = Counter(emotion_keywords)
 
     return {
         "status": f"총 {total_searched}개 검색, {len(candidate_blogs)}개 후보 중 {len(valid_blogs_data)}개 블로그 최종 분석 완료.",
         "total_pos": total_pos, "total_neg": total_neg, "total_strong_pos": total_strong_pos, "total_strong_neg": total_strong_neg,
         "total_sentiment_frequency": total_sentiment_frequency, "total_sentiment_score": total_sentiment_score,
-        "seasonal_data": seasonal_data, 
-        "negative_sentences": all_negative_sentences, 
+        "seasonal_data": seasonal_data,
+        "negative_sentences": all_negative_sentences,
         "blog_results_df": pd.DataFrame(blog_results_list) if blog_results_list else pd.DataFrame(),
         "blog_judgments": blog_judgments_list,
         "url_markdown": f"### 분석된 블로그 URL ({len(valid_blogs_data)}개)\n" + "\n".join([f"- [{b['title']}]({b['link']})" for b in valid_blogs_data]),
         "trend_graph": trend_graph_path,
+        "focused_trend_graph": focused_trend_graph_path,
         "trend_df": trend_df,
+        "focused_trend_df": focused_trend_df,
         "event_period": event_period,
         "festival_start_date": start_date,
         "festival_end_date": end_date,

@@ -2,7 +2,7 @@
 import gradio as gr
 import pandas as pd
 import os
-from .utils import save_df_to_csv, change_page, summarize_negative_feedback
+from .utils import save_df_to_csv, change_page, summarize_negative_feedback, create_festinsight_table, create_festinsight_table_for_category
 from ..infrastructure.reporting.charts import create_donut_chart, create_stacked_bar_chart
 # create_wordcloud 대신 create_sentiment_wordclouds를 임포트
 from ..infrastructure.reporting.wordclouds import create_sentiment_wordclouds
@@ -16,11 +16,15 @@ SEASON_EN_MAP = {
 }
 
 def package_keyword_results(results: dict, name: str):
-    # 출력 개수가 5개(계절별 부정 WC + 트렌드 요약) 늘어났으므로 30으로 수정
-    num_outputs = 30
+    # 출력 개수: FestInsight CSV 추가로 32개
+    num_outputs = 32
     if "error" in results: return [results["error"]] + [gr.update(visible=False)] * (num_outputs - 1)
 
     try:
+        # FestInsight 테이블 생성
+        festinsight_df = create_festinsight_table(results, name)
+        festinsight_csv = save_df_to_csv(festinsight_df, "FestInsight_Analysis_Table", name) if not festinsight_df.empty else None
+
         # seasonal_texts 대신 seasonal_aspect_pairs를 사용
         seasonal_aspect_pairs = results.get("seasonal_aspect_pairs", {})
         seasonal_pos_wc_paths = {}
@@ -41,13 +45,50 @@ def package_keyword_results(results: dict, name: str):
                 seasonal_neg_wc_paths[season] = None
 
         neg_summary_text = summarize_negative_feedback(results.get("negative_sentences", []))
-        
+
         trend_metrics = results.get("trend_metrics", {})
-        trend_summary_text = f"""- **축제 전 30일 평균 검색량**: {trend_metrics.get('before_avg', 'N/A')}
-- **축제 기간 평균 검색량**: {trend_metrics.get('during_avg', 'N/A')}
-- **축제 후 30일 평균 검색량**: {trend_metrics.get('after_avg', 'N/A')}
-- **트렌드 지수 (축제 전 대비 기간)**: {trend_metrics.get('trend_index', 'N/A')}%
-- **축제 후 트렌드 (기간 대비)**: {trend_metrics.get('after_trend_index', 'N/A')}%
+        trend_index = trend_metrics.get('trend_index', 0)
+        after_trend_index = trend_metrics.get('after_trend_index', 0)
+        before_avg = trend_metrics.get('before_avg', 0)
+        during_avg = trend_metrics.get('during_avg', 0)
+        after_avg = trend_metrics.get('after_avg', 0)
+
+        # 데이터가 없을 때 (모두 0) 트렌드 분석을 표시하지 않음
+        if before_avg == 0 and during_avg == 0 and after_avg == 0:
+            trend_summary_text = "### 📊 검색량 트렌드 분석\n\n⚠️ **축제 기간 정보가 없거나 트렌드 데이터를 가져올 수 없습니다.**\n\n이 축제는 TourAPI에 등록되지 않았거나, 네이버 트렌드 검색량이 충분하지 않을 수 있습니다."
+        else:
+            # 트렌드 해석 추가 (데이터가 있을 때만)
+            if trend_index >= 200:
+                trend_interpretation = "🔥 **매우 높은 관심도 상승** - 축제가 큰 화제를 모았습니다"
+            elif trend_index >= 150:
+                trend_interpretation = "📈 **높은 관심도 상승** - 축제가 성공적으로 주목받았습니다"
+            elif trend_index >= 100:
+                trend_interpretation = "✅ **적절한 관심도 유지** - 안정적인 검색량을 기록했습니다"
+            elif trend_index >= 70:
+                trend_interpretation = "⚠️ **관심도 소폭 하락** - 홍보 강화가 필요할 수 있습니다"
+            else:
+                trend_interpretation = "❌ **관심도 크게 하락** - 마케팅 전략 재검토가 필요합니다"
+
+            if after_trend_index >= 70:
+                retention_interpretation = "🎯 **지속형 콘텐츠** - 축제 종료 후에도 높은 관심 유지"
+            elif after_trend_index >= 50:
+                retention_interpretation = "📊 **보통 수준 유지** - 일반적인 관심도 하락 패턴"
+            else:
+                retention_interpretation = "💨 **단발형 이벤트** - 축제 종료 후 관심도 급감"
+
+            trend_summary_text = f"""### 📊 검색량 트렌드 분석
+
+- **축제 전 30일 평균 검색량**: {before_avg}
+- **축제 기간 평균 검색량**: {during_avg}
+- **축제 후 30일 평균 검색량**: {after_avg}
+
+---
+
+- **트렌드 지수 (축제 전 대비 기간)**: {trend_index}%
+  - {trend_interpretation}
+
+- **축제 후 트렌드 (기간 대비)**: {after_trend_index}%
+  - {retention_interpretation}
 """
 
         overall_summary_text = f"""- **긍정 문장 수**: {results.get('total_pos', 0)}개
@@ -82,6 +123,7 @@ def package_keyword_results(results: dict, name: str):
         autumn_pos = seasonal_data.get("가을", {}).get("pos", 0); autumn_neg = seasonal_data.get("가을", {}).get("neg", 0)
         winter_pos = seasonal_data.get("겨울", {}).get("pos", 0); winter_neg = seasonal_data.get("겨울", {}).get("neg", 0)
         trend_graph = results.get("trend_graph")
+        focused_trend_graph = results.get("focused_trend_graph")
 
         return (
             results.get("status", "분석 완료"),
@@ -89,9 +131,11 @@ def package_keyword_results(results: dict, name: str):
             gr.update(value=neg_summary_text, visible=bool(neg_summary_text)),
             gr.update(value=create_donut_chart(results.get("total_pos", 0), results.get("total_neg", 0), f'{name} 전체 후기 요약'), visible=True),
             gr.update(value=trend_graph, visible=trend_graph is not None),
+            gr.update(value=focused_trend_graph, visible=focused_trend_graph is not None),
             gr.update(value=overall_summary_text, visible=True),
             gr.update(value=trend_summary_text, visible=bool(trend_metrics)),
             gr.update(value=summary_csv, visible=summary_csv is not None),
+            gr.update(value=festinsight_csv, visible=festinsight_csv is not None),
             gr.update(value=create_stacked_bar_chart(spring_pos, spring_neg, "봄 시즌"), visible=spring_pos > 0 or spring_neg > 0),
             gr.update(value=create_stacked_bar_chart(summer_pos, summer_neg, "여름 시즌"), visible=summer_pos > 0 or summer_neg > 0),
             gr.update(value=create_stacked_bar_chart(autumn_pos, autumn_neg, "가을 시즌"), visible=autumn_pos > 0 or autumn_neg > 0),
@@ -117,10 +161,14 @@ def package_keyword_results(results: dict, name: str):
         return [f"오류: {e}"] + [gr.update(visible=False)] * (num_outputs - 1)
 
 def package_category_results(results: dict, name: str):
-    num_outputs = 48 # 4개의 트렌드 워드클라우드 추가
+    num_outputs = 50 # FestInsight CSV 추가로 50개
     if "error" in results: return [results["error"]] + [gr.update(visible=False)] * (num_outputs - 1)
 
     try:
+        # FestInsight 테이블 생성
+        festinsight_df = create_festinsight_table_for_category(results, name)
+        festinsight_csv = save_df_to_csv(festinsight_df, "FestInsight_Analysis_Table", name) if not festinsight_df.empty else None
+
         seasonal_aspect_pairs = results.get("seasonal_aspect_pairs", {})
         seasonal_pos_wc_paths = {}
         seasonal_neg_wc_paths = {}
@@ -177,6 +225,7 @@ def package_category_results(results: dict, name: str):
             gr.update(value=create_donut_chart(results.get("total_pos", 0), results.get("total_neg", 0), f'{name} 종합 분석'), visible=True),
             gr.update(value=cat_overall_summary_text, visible=True),
             gr.update(value=cat_overall_csv, visible=cat_overall_csv is not None),
+            gr.update(value=festinsight_csv, visible=festinsight_csv is not None),
             gr.update(value=create_stacked_bar_chart(cat_spring_pos, cat_spring_neg, "봄 시즌"), visible=cat_spring_pos > 0 or cat_spring_neg > 0),
             gr.update(value=create_stacked_bar_chart(cat_summer_pos, cat_summer_neg, "여름 시즌"), visible=cat_summer_pos > 0 or cat_summer_neg > 0),
             gr.update(value=create_stacked_bar_chart(cat_autumn_pos, cat_autumn_neg, "가을 시즌"), visible=cat_autumn_pos > 0 or cat_autumn_neg > 0),

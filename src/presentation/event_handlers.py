@@ -7,7 +7,7 @@ from ..data import festival_loader
 from ..infrastructure.reporting.charts import create_donut_chart, create_sentence_score_bar_chart
 from ..application.utils import change_page # utils에서 임포트
 from ..application.result_packager import package_festival_details # result_packager에서 임포트
-from ..application.analysis_service import get_trend_graph_for_festival
+from ..application.analysis_service import get_trend_graph_for_festival, get_focused_trend_graph_for_festival
 # create_wordcloud 대신 create_sentiment_wordclouds를 임포트
 from ..infrastructure.reporting.wordclouds import create_sentiment_wordclouds
 
@@ -62,8 +62,8 @@ def update_individual_charts(evt: gr.SelectData, df_full: pd.DataFrame, judgment
 
 def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, festival_full_results: list, page_num: int):
     """축제 표 클릭 핸들러"""
-    # 출력 개수가 1개(부정 WC) 늘어났으므로 11로 수정
-    num_outputs = 11
+    # 출력 개수: 집중 트렌드 그래프 추가로 12개
+    num_outputs = 12
     if not evt.value or not isinstance(festival_full_results, list) or not festival_full_results:
         return [gr.update(visible=False)] * num_outputs
 
@@ -113,17 +113,19 @@ def update_festival_detail_charts(evt: gr.SelectData, df_full: pd.DataFrame, fes
         pos_wc_path, neg_wc_path = create_sentiment_wordclouds(all_pairs, festival_name, mask_path=wordcloud_mask_path)
 
         trend_graph_path = get_trend_graph_for_festival(festival_name)
-        
+        focused_trend_graph_path = get_focused_trend_graph_for_festival(festival_name)
+
         # 기존 상세 정보 패키징 (워드클라우드 제외)
         packaged_details = package_festival_details(selected_festival_result, festival_name)
 
-        # 워드클라우드, 트렌드 그래프를 포함하여 반환
+        # 워드클라우드, 트렌드 그래프들을 포함하여 반환
         return_values = [
             gr.update(value=pos_wc_path, visible=pos_wc_path is not None),
             gr.update(value=neg_wc_path, visible=neg_wc_path is not None),
-            gr.update(value=trend_graph_path, visible=trend_graph_path is not None)
+            gr.update(value=trend_graph_path, visible=trend_graph_path is not None),
+            gr.update(value=focused_trend_graph_path, visible=focused_trend_graph_path is not None)
         ] + packaged_details
-        
+
         return return_values
         
     except IndexError:

@@ -5,7 +5,8 @@ from .analysis_logic import analyze_single_keyword_fully, perform_category_analy
 from .result_packager import package_keyword_results, package_category_results
 from .utils import create_driver
 from ..data import festival_loader
-from ..infrastructure.web.naver_trend_api import create_trend_graph
+from ..infrastructure.web.naver_trend_api import create_trend_graph, create_focused_trend_graph
+from ..infrastructure.web.tour_api_client import get_festival_period
 
 # --- 단일 키워드 분석 --- #
 def analyze_keyword_and_generate_report(keyword: str, num_reviews: int, log_details: bool, progress=gr.Progress(track_tqdm=True)):
@@ -177,12 +178,33 @@ def run_multi_group_comparison(c1a, c2a, c3a, sfa, c1b, c2b, c3b, sfb, c1c, c2c,
 
 def get_trend_graph_for_festival(festival_name: str):
     if not festival_name:
-        return gr.update(visible=False)
-    
+        return None
+
     try:
-        graph = create_trend_graph(festival_name)
-        return graph
+        # create_trend_graph는 (그래프 경로, 데이터프레임) 튜플을 반환하므로, 경로만 사용합니다.
+        graph_path, _ = create_trend_graph(festival_name)
+        return graph_path
     except Exception as e:
         print(f"트렌드 그래프 생성 중 오류 ({festival_name}): {e}")
         traceback.print_exc()
-        return gr.update(visible=False)
+        return None
+
+def get_focused_trend_graph_for_festival(festival_name: str):
+    if not festival_name:
+        return None
+
+    try:
+        # TourAPI에서 축제 기간 가져오기 (없어도 최근 60일 트렌드 생성)
+        start_date_str, end_date_str = get_festival_period(festival_name)
+
+        if not start_date_str or not end_date_str:
+            print(f"⚠️ '{festival_name}' 축제 기간 정보 없음 - 최근 60일 트렌드 생성")
+
+        # create_focused_trend_graph는 (그래프 경로, 데이터프레임) 튜플을 반환하므로, 경로만 사용합니다.
+        # 축제 기간이 없어도 함수가 알아서 최근 60일 트렌드를 생성합니다.
+        graph_path, _ = create_focused_trend_graph(festival_name, start_date_str, end_date_str)
+        return graph_path
+    except Exception as e:
+        print(f"❌ 집중 트렌드 그래프 생성 중 오류 ({festival_name}): {e}")
+        traceback.print_exc()
+        return None

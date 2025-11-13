@@ -1,63 +1,36 @@
 # src/infrastructure/web/tour_api_client.py
-import requests
-import os
+"""
+축제 정보 조회 클라이언트
+기존에는 TourAPI를 사용했지만, 현재는 로컬 데이터베이스를 사용합니다.
+"""
 from functools import lru_cache
-from ...config import get_tour_api_key
+from ..database.festival_repository import search_festival_by_title as _search_db
 
-BASE_URL = "https://apis.data.go.kr/B551011/KorService1/searchKeyword1"
-
-@lru_cache(maxsize=128)
-def get_festival_period(festival_name: str):
+@lru_cache(maxsize=256)
+def get_festival_details(festival_name: str) -> dict | None:
     """
-    TourAPI를 사용해 축제 이름으로 검색하여 해당 축제의 시작일과 종료일을 반환합니다.
+    데이터베이스에서 축제 이름으로 검색하여 해당 축제의 상세 정보를 반환합니다.
+    - 시작일, 종료일, 주소, 좌표 등
+
+    Args:
+        festival_name: 검색할 축제 이름
+
+    Returns:
+        축제 정보 딕셔너리 또는 None
     """
-    api_key = get_tour_api_key()
-    if not api_key:
-        print("Warning: TourAPI key is not configured. Skipping festival period fetch.")
-        return None, None
+    return _search_db(festival_name)
 
-    params = {
-        "serviceKey": api_key,
-        "numOfRows": 1,
-        "pageNo": 1,
-        "MobileOS": "ETC",
-        "MobileApp": "FestInsight",
-        "listYN": "Y",
-        "arrange": "A", # 제목순
-        "keyword": festival_name,
-        "_type": "json"
-    }
+def get_festival_period(festival_name: str) -> tuple[str | None, str | None]:
+    """
+    축제 이름으로 축제 기간을 조회합니다.
 
-    try:
-        response = requests.get(BASE_URL, params=params, timeout=5)
-        response.raise_for_status()
-        data = response.json()
+    Args:
+        festival_name: 축제 이름
 
-        items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        
-        if not items:
-            return None, None
-        
-        # 리스트가 아닌 경우 단일 항목이므로 리스트로 만듭니다.
-        if not isinstance(items, list):
-            items = [items]
-
-        # 정확히 일치하는 축제를 찾습니다.
-        for item in items:
-            if item.get('title') == festival_name:
-                start_date = item.get("eventstartdate")
-                end_date = item.get("eventenddate")
-                return start_date, end_date
-        
-        # 정확히 일치하는 것이 없으면 첫 번째 결과를 반환합니다.
-        first_item = items[0]
-        start_date = first_item.get("eventstartdate")
-        end_date = first_item.get("eventenddate")
-        return start_date, end_date
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching festival period for '{festival_name}': {e}")
-        return None, None
-    except (KeyError, TypeError, ValueError) as e:
-        print(f"Error parsing TourAPI response for '{festival_name}': {e}")
-        return None, None
+    Returns:
+        (시작일, 종료일) 튜플 (YYYYMMDD 형식 문자열)
+    """
+    details = get_festival_details(festival_name)
+    if details:
+        return details.get("start_date"), details.get("end_date")
+    return None, None

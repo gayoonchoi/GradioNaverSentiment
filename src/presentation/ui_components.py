@@ -11,11 +11,15 @@ def create_keyword_analysis_outputs():
             negative_summary_output = gr.Markdown(label="주요 불만 사항 요약", visible=False)
             with gr.Row():
                 overall_chart_output = gr.Plot(label="전체 후기 요약", visible=False)
-                trend_graph_output = gr.Image(label="검색어 트렌드", visible=False)
+                trend_graph_output = gr.Image(label="지난 1년간 검색어 트렌드", visible=False)
+            with gr.Row():
+                focused_trend_graph_output = gr.Image(label="최근 검색량 트렌드 집중 분석", visible=False)
             with gr.Row():
                 overall_summary_text_output = gr.Markdown(label="종합 분석 상세", visible=False)
                 trend_summary_output = gr.Markdown(label="트렌드 분석 상세", visible=False)
-            overall_csv_output = gr.File(label="종합 분석 결과 (CSV) 다운로드", visible=False)
+            with gr.Row():
+                overall_csv_output = gr.File(label="종합 분석 결과 (CSV) 다운로드", visible=False)
+                festinsight_csv_output = gr.File(label="FestInsight 분석 테이블 (CSV) 다운로드", visible=False)
             with gr.Accordion("계절별 상세 분석", open=False) as seasonal_accordion:
                 with gr.Row():
                     spring_chart_output = gr.Plot(label="봄 시즌", visible=False, scale=1)
@@ -67,8 +71,8 @@ def create_keyword_analysis_outputs():
 
     return [
         status_output, url_output, negative_summary_output,
-        overall_chart_output, trend_graph_output, 
-        overall_summary_text_output, trend_summary_output, overall_csv_output,
+        overall_chart_output, trend_graph_output, focused_trend_graph_output,
+        overall_summary_text_output, trend_summary_output, overall_csv_output, festinsight_csv_output,
         spring_chart_output, summer_chart_output, autumn_chart_output, winter_chart_output,
         spring_pos_wc_output, spring_neg_wc_output,
         summer_pos_wc_output, summer_neg_wc_output,
@@ -87,7 +91,9 @@ def create_category_analysis_outputs():
             with gr.Row():
                 cat_overall_chart_output = gr.Plot(label="카테고리 전체 후기 요약", visible=False)
                 cat_overall_summary_text_output = gr.Markdown(label="종합 분석 상세", visible=False)
-            cat_overall_csv_output = gr.File(label="카테고리 전체 요약 (CSV) 다운로드", visible=False)
+            with gr.Row():
+                cat_overall_csv_output = gr.File(label="카테고리 전체 요약 (CSV) 다운로드", visible=False)
+                cat_festinsight_csv_output = gr.File(label="FestInsight 분석 테이블 (CSV) 다운로드", visible=False)
             with gr.Accordion("계절별 상세 분석", open=False):
                 with gr.Row():
                     cat_spring_chart_output = gr.Plot(label="봄 시즌", visible=False, scale=1)
@@ -130,7 +136,9 @@ def create_category_analysis_outputs():
             with gr.Row():
                 fest_pos_wordcloud_output = gr.Image(label="축제 긍정 워드클라우드", visible=False)
                 fest_neg_wordcloud_output = gr.Image(label="축제 부정 워드클라우드", visible=False)
-            fest_trend_graph_output = gr.Image(label="검색어 트렌드", visible=False)
+            with gr.Row():
+                fest_trend_graph_output = gr.Image(label="지난 1년간 검색어 트렌드", visible=False)
+                fest_focused_trend_graph_output = gr.Image(label="최근 검색량 트렌드 집중 분석", visible=False)
             fest_negative_summary_output = gr.Markdown(label="주요 불만 사항 요약", visible=False)
             with gr.Row():
                 fest_overall_chart_output = gr.Plot(label="개별 축제 후기 요약", visible=False)
@@ -175,13 +183,13 @@ def create_category_analysis_outputs():
 
         festival_detail_outputs = [
             fest_pos_wordcloud_output, fest_neg_wordcloud_output,
-            fest_trend_graph_output,
-            fest_negative_summary_output, 
-            fest_overall_chart_output, 
+            fest_trend_graph_output, fest_focused_trend_graph_output,
+            fest_negative_summary_output,
+            fest_overall_chart_output,
             fest_overall_summary_text_output,
-            fest_spring_chart_output, 
-            fest_summer_chart_output, 
-            fest_autumn_chart_output, 
+            fest_spring_chart_output,
+            fest_summer_chart_output,
+            fest_autumn_chart_output,
             fest_winter_chart_output,
             festival_detail_accordion
         ]
@@ -203,7 +211,7 @@ def create_category_analysis_outputs():
 
     return [
         # Tier 1
-        status_output, cat_negative_summary_output, cat_overall_chart_output, cat_overall_summary_text_output, cat_overall_csv_output,
+        status_output, cat_negative_summary_output, cat_overall_chart_output, cat_overall_summary_text_output, cat_overall_csv_output, cat_festinsight_csv_output,
         cat_spring_chart_output, cat_summer_chart_output, cat_autumn_chart_output, cat_winter_chart_output,
         cat_spring_pos_wc_output, cat_spring_neg_wc_output,
         cat_summer_pos_wc_output, cat_summer_neg_wc_output,
@@ -212,7 +220,7 @@ def create_category_analysis_outputs():
         cat_spring_trend_wc_output, cat_summer_trend_wc_output, cat_autumn_trend_wc_output, cat_winter_trend_wc_output,
         # Tier 2
         festival_results_output, festival_results_df, festival_full_results_state, festival_page_num_input, festival_total_pages_output, festival_list_csv_output,
-        fest_pos_wordcloud_output, fest_neg_wordcloud_output, fest_trend_graph_output, fest_negative_summary_output, fest_overall_chart_output, fest_overall_summary_text_output,
+        fest_pos_wordcloud_output, fest_neg_wordcloud_output, fest_trend_graph_output, fest_focused_trend_graph_output, fest_negative_summary_output, fest_overall_chart_output, fest_overall_summary_text_output,
         fest_spring_chart_output, fest_summer_chart_output, fest_autumn_chart_output, fest_winter_chart_output, festival_detail_accordion,
         # Tier 3
         all_blogs_output, all_blogs_df, all_blog_judgments_state, all_blogs_page_num_input, all_blogs_total_pages_output, all_blogs_list_csv_output,
