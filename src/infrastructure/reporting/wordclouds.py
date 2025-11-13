@@ -38,7 +38,7 @@ def find_font_path():
     for path in FONT_PATHS:
         if os.path.exists(path):
             return path
-    print("[WordCloud] Error: No valid font file found in the specified paths.")
+    print("[WordCloud] Error: No valid font file found in the specified paths. Please check font configuration.")
     return None
 
 def positive_color_func(word, font_size, position, orientation, random_state=None, **kwargs):
@@ -125,3 +125,53 @@ def create_sentiment_wordclouds(aspect_sentiment_pairs: list, keyword: str, mask
         print(f"[WordCloud] Error during aspect-based WC generation: {e}")
         traceback.print_exc()
         return None, None
+
+def create_seasonal_trend_wordcloud(trend_scores: dict, season_name: str, mask_path: str = None) -> str | None:
+    """
+    계절별 축제 트렌드 점수를 기반으로 워드클라우드를 생성합니다.
+    :param trend_scores: {'축제이름': 트렌드 점수} 형태의 딕셔너리
+    :param season_name: 워드클라우드 파일명에 사용될 계절 이름 (예: "봄")
+    :param mask_path: 워드클라우드에 적용할 마스크 이미지 경로
+    :return: 생성된 워드클라우드 이미지 파일 경로 또는 None
+    """
+    if not trend_scores:
+        return None
+
+    try:
+        font_path = find_font_path()
+        if not font_path:
+            return None
+        
+        mask_array = None
+        if mask_path and os.path.exists(mask_path):
+            try:
+                img = Image.open(mask_path).convert("L")
+                mask_array = np.array(img, dtype=np.uint8)
+            except Exception as e:
+                print(f"[WordCloud] Error loading mask image for trend WC: {e}")
+                mask_array = None
+
+        wc = WordCloud(
+            font_path=font_path,
+            width=800, height=800,
+            background_color='white',
+            mask=mask_array,
+            max_words=100,
+            colormap='viridis' # 트렌드는 다채로운 색상 사용
+        ).generate_from_frequencies(trend_scores)
+
+        temp_dir = os.path.join(os.getcwd(), "temp_images")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # 파일명에 계절 이름 포함
+        sanitized_season_name = re.sub(r'[\\/:*?"<>|]', '_', season_name)
+        trend_wc_path = os.path.join(temp_dir, f"wc_trend_{sanitized_season_name}_{uuid.uuid4()}.png")
+        wc.to_file(trend_wc_path)
+        print(f"[WordCloud] Seasonal Trend WC generated for {season_name}: {trend_wc_path}")
+
+        return trend_wc_path
+
+    except Exception as e:
+        print(f"[WordCloud] Error during seasonal trend WC generation: {e}")
+        traceback.print_exc()
+        return None

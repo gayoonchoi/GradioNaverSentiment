@@ -14,7 +14,8 @@ def create_keyword_analysis_outputs():
                 trend_graph_output = gr.Image(label="검색어 트렌드", visible=False)
             with gr.Row():
                 overall_summary_text_output = gr.Markdown(label="종합 분석 상세", visible=False)
-                overall_csv_output = gr.File(label="전체 후기 요약 (CSV) 다운로드", visible=False)
+                trend_summary_output = gr.Markdown(label="트렌드 분석 상세", visible=False)
+            overall_csv_output = gr.File(label="종합 분석 결과 (CSV) 다운로드", visible=False)
             with gr.Accordion("계절별 상세 분석", open=False) as seasonal_accordion:
                 with gr.Row():
                     spring_chart_output = gr.Plot(label="봄 시즌", visible=False, scale=1)
@@ -66,7 +67,8 @@ def create_keyword_analysis_outputs():
 
     return [
         status_output, url_output, negative_summary_output,
-        overall_chart_output, trend_graph_output, overall_summary_text_output, overall_csv_output,
+        overall_chart_output, trend_graph_output, 
+        overall_summary_text_output, trend_summary_output, overall_csv_output,
         spring_chart_output, summer_chart_output, autumn_chart_output, winter_chart_output,
         spring_pos_wc_output, spring_neg_wc_output,
         summer_pos_wc_output, summer_neg_wc_output,
@@ -103,13 +105,20 @@ def create_category_analysis_outputs():
                     cat_winter_chart_output = gr.Plot(label="겨울 시즌", visible=False, scale=1)
                     cat_winter_pos_wc_output = gr.Image(label="겨울 긍정 워드클라우드", visible=False, scale=1)
                     cat_winter_neg_wc_output = gr.Image(label="겨울 부정 워드클라우드", visible=False, scale=1)
+            with gr.Accordion("계절별 트렌드 워드클라우드", open=False):
+                with gr.Row():
+                    cat_spring_trend_wc_output = gr.Image(label="봄 시즌 트렌드", visible=False, scale=1)
+                    cat_summer_trend_wc_output = gr.Image(label="여름 시즌 트렌드", visible=False, scale=1)
+                with gr.Row():
+                    cat_autumn_trend_wc_output = gr.Image(label="가을 시즌 트렌드", visible=False, scale=1)
+                    cat_winter_trend_wc_output = gr.Image(label="겨울 시즌 트렌드", visible=False, scale=1)
 
         gr.Markdown("### 축제별 요약 결과")
         festival_results_df = gr.State()
         festival_full_results_state = gr.State()
         festival_results_output = gr.DataFrame(
-            headers=["축제명", "감성 빈도", "감성 점수", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)", "부정 비율 (%)", "주요 불만 사항 요약"],
-            datatype=["str", "str", "number", "str", "number", "number", "str", "str", "str"],
+            headers=["축제명", "감성 빈도", "감성 점수", "긍정 문장 수", "부정 문장 수", "긍정 비율 (%)", "부정 비율 (%)", "축제 기간 (일)", "트렌드 지수 (%)", "만족도 변화", "주요 감성 키워드", "주요 불만 사항 요약"],
+            datatype=["str", "number", "str", "number", "number", "str", "str", "str", "str", "str", "str", "str"],
             label="축제별 분석 결과", wrap=True, interactive=True
         )
         with gr.Row():
@@ -200,6 +209,7 @@ def create_category_analysis_outputs():
         cat_summer_pos_wc_output, cat_summer_neg_wc_output,
         cat_autumn_pos_wc_output, cat_autumn_neg_wc_output,
         cat_winter_pos_wc_output, cat_winter_neg_wc_output,
+        cat_spring_trend_wc_output, cat_summer_trend_wc_output, cat_autumn_trend_wc_output, cat_winter_trend_wc_output,
         # Tier 2
         festival_results_output, festival_results_df, festival_full_results_state, festival_page_num_input, festival_total_pages_output, festival_list_csv_output,
         fest_pos_wordcloud_output, fest_neg_wordcloud_output, fest_trend_graph_output, fest_negative_summary_output, fest_overall_chart_output, fest_overall_summary_text_output,

@@ -22,6 +22,8 @@ def build_single_keyword_tab():
                 analyze_button = gr.Button("분석 시작", variant="primary")
             with gr.Column(scale=3):
                 outputs = create_keyword_analysis_outputs()
+        
+        # create_keyword_analysis_outputs가 반환하는 전체 리스트를 그대로 전달
         analyze_button.click(
             analyze_keyword_and_generate_report, 
             inputs=[keyword_input, num_reviews_input, log_details], 
@@ -47,6 +49,8 @@ def build_keyword_comparison_tab():
             with gr.Column():
                 gr.Markdown("### 키워드 B 분석 결과")
                 outputs_b = create_keyword_analysis_outputs()
+        
+        # 여기서도 마찬가지로 전체 리스트를 그대로 전달
         compare_button.click(
             run_comparison_analysis, 
             inputs=[keyword_input_a, keyword_input_b, num_reviews_comp, log_details_comp], 

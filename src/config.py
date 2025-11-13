@@ -21,27 +21,37 @@ def setup_environment():
         print(f".env 파일을 찾을 수 없습니다: {dotenv_path}. API 키가 환경 변수에 설정되었는지 확인하세요.")
 
 def get_naver_api_keys():
-    """네이버 API 키를 반환합니다."""
+    """네이버 검색 API 키를 반환합니다."""
     client_id = os.getenv("NAVER_CLIENT_ID")
     client_secret = os.getenv("NAVER_CLIENT_SECRET")
     if not client_id or not client_secret:
         raise ValueError(".env 파일에 NAVER_CLIENT_ID와 NAVER_CLIENT_SECRET을 설정하세요.")
     return client_id, client_secret
 
+def get_naver_trend_api_keys():
+    """네이버 데이터랩(트렌드) API 키를 반환합니다."""
+    client_id = os.getenv("NAVER_TREND_CLIENT_ID")
+    client_secret = os.getenv("NAVER_TREND_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        print("Warning: NAVER_TREND_CLIENT_ID or NAVER_TREND_CLIENT_SECRET not found. Falling back to NAVER_CLIENT_ID.")
+        return get_naver_api_keys()
+    return client_id, client_secret
+
+def get_tour_api_key():
+    """TourAPI 서비스 키를 반환합니다."""
+    api_key = os.getenv("TOUR_API_KEY")
+    if not api_key:
+        print("Warning: TOUR_API_KEY is not set in .env file. Festival period information will not be available.")
+        return None
+    return api_key
+
 def get_google_api_key():
     """Google API 키를 반환합니다."""
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise ValueError(".env 파일에 GOOGLE_API_KEY를 설정하세요.")
+        print("Warning: GOOGLE_API_KEY is not set in .env file.")
+        return None
     return api_key
-
-def get_naver_trend_api_keys():
-    """네이버 트렌드 API 키를 반환합니다."""
-    client_id = os.getenv("NAVER_TREND_CLIENT_ID")
-    client_secret = os.getenv("NAVER_TREND_CLIENT_SECRET")
-    if not client_id or not client_secret:
-        raise ValueError(".env 파일에 NAVER_TREND_CLIENT_ID와 NAVER_TREND_CLIENT_SECRET을 설정하세요.")
-    return client_id, client_secret
 
 # 초기 환경 설정 실행
 setup_environment()

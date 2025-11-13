@@ -55,7 +55,7 @@ def run_comparison_analysis(keyword_a: str, keyword_b: str, num_reviews: int, lo
 # --- 카테고리 분석 --- #
 def analyze_festivals_by_category(cat1, cat2, cat3, num_reviews, log_details, progress=gr.Progress(track_tqdm=True)):
     driver = None
-    num_outputs = 44
+    num_outputs = 48
     category_name = cat3 or cat2 or cat1
     if not category_name:
         return ["오류: 분석할 카테고리를 선택하세요."] + [gr.update(visible=False)]*(num_outputs - 1)
@@ -76,7 +76,7 @@ def analyze_festivals_by_category(cat1, cat2, cat3, num_reviews, log_details, pr
 # --- 카테고리 비교 분석 --- #
 def compare_categories(cat1_a, cat2_a, cat3_a, cat1_b, cat2_b, cat3_b, num_reviews, log_details, progress=gr.Progress(track_tqdm=True)):
     driver = None
-    num_outputs_per_category = 44
+    num_outputs_per_category = 48
     category_name_a = cat3_a or cat2_a or cat1_a
     category_name_b = cat3_b or cat2_b or cat1_b
     if not category_name_a or not category_name_b:
@@ -105,7 +105,7 @@ def compare_categories(cat1_a, cat2_a, cat3_a, cat1_b, cat2_b, cat3_b, num_revie
 # --- 자유 그룹 분석 (Helper & Main) --- #
 # Helper: 인자를 명시적으로 받도록 수정
 def _analyze_single_festival_group(cat1, cat2, cat3, selected_festivals, num_reviews, driver, log_details, progress, initial_progress, total_steps):
-    num_outputs = 44
+    num_outputs = 48
     festivals_to_analyze = []
     group_name = ""
 

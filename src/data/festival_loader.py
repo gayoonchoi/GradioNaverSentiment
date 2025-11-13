@@ -8,13 +8,14 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 FESTIVALS_DIR = os.path.join(PROJECT_ROOT, "festivals")
 
 CATEGORY_FILES = [
-    "festivals_type_도시와지역이벤트.json",
-    "festivals_type_문화예술과공연.json",
-    "festivals_type_산업과지식.json",
-    "festivals_type_자연과계절.json",
-    "festivals_type_전통과역사.json",
-    "festivals_type_지역특산물과음식.json",
-    "festivals_type_체험과레저.json",
+    "festivals_type_계절과_자연.json",
+    "festivals_type_도시와_커뮤니티.json",
+    "festivals_type_레저와_스포츠.json",
+    "festivals_type_문화와_예술.json",
+    "festivals_type_미식과_특산물.json",
+    "festivals_type_전통과_역사.json",
+    "festivals_type_종교와_영성.json",
+    "festivals_type_체험과_교육.json",
 ]
 
 

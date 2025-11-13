@@ -59,17 +59,15 @@ def get_trend_data(keyword, start_date, end_date):
     return df
 
 def create_trend_graph(keyword: str, festival_start_date=None, festival_end_date=None):
-    """특정 키워드에 대한 트렌드 그래프를 생성하여 이미지 파일 경로를 반환합니다."""
+    """특정 키워드에 대한 트렌드 그래프를 생성하여 이미지 파일 경로와 데이터프레임을 반환합니다."""
     today = datetime.date.today()
     start_for_api = today - datetime.timedelta(days=365)
     end_for_api = today
 
     df_trend = get_trend_data(keyword, start_for_api, end_for_api)
 
-    print(f"[Trend Debug] Keyword: {keyword}, Trend DataFrame is empty: {df_trend.empty}")
-
     if df_trend.empty:
-        return None
+        return None, pd.DataFrame()
 
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(df_trend['period'], df_trend['ratio'], marker='o', linestyle='-', label=keyword)
@@ -93,5 +91,5 @@ def create_trend_graph(keyword: str, festival_start_date=None, festival_end_date
     fig.savefig(file_path)
     plt.close(fig)
     
-    return file_path
+    return file_path, df_trend
 

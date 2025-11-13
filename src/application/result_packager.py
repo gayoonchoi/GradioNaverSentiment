@@ -16,8 +16,8 @@ SEASON_EN_MAP = {
 }
 
 def package_keyword_results(results: dict, name: str):
-    # 출력 개수가 4개(계절별 부정 WC) 늘어났으므로 29로 수정
-    num_outputs = 29
+    # 출력 개수가 5개(계절별 부정 WC + 트렌드 요약) 늘어났으므로 30으로 수정
+    num_outputs = 30
     if "error" in results: return [results["error"]] + [gr.update(visible=False)] * (num_outputs - 1)
 
     try:
@@ -41,9 +41,35 @@ def package_keyword_results(results: dict, name: str):
                 seasonal_neg_wc_paths[season] = None
 
         neg_summary_text = summarize_negative_feedback(results.get("negative_sentences", []))
-        overall_summary_text = f"""- **긍정 문장 수**: {results.get('total_pos', 0)}개\n- **부정 문장 수**: {results.get('total_neg', 0)}개\n- **감성어 빈도 (긍정+부정)**: {results.get('total_sentiment_frequency', 0)}개\n- **감성 점수**: {results.get('total_sentiment_score', 50.0):.1f}점 (0~100점)"""
+        
+        trend_metrics = results.get("trend_metrics", {})
+        trend_summary_text = f"""- **축제 전 30일 평균 검색량**: {trend_metrics.get('before_avg', 'N/A')}
+- **축제 기간 평균 검색량**: {trend_metrics.get('during_avg', 'N/A')}
+- **축제 후 30일 평균 검색량**: {trend_metrics.get('after_avg', 'N/A')}
+- **트렌드 지수 (축제 전 대비 기간)**: {trend_metrics.get('trend_index', 'N/A')}%
+- **축제 후 트렌드 (기간 대비)**: {trend_metrics.get('after_trend_index', 'N/A')}%
+"""
 
-        summary_df = pd.DataFrame([{'검색어': name, '감성 빈도': results.get('total_sentiment_frequency', 0), '감성 점수': f"{results.get('total_sentiment_score', 50.0):.1f}", '긍정 문장 수': results.get("total_pos", 0), '부정 문장 수': results.get("total_neg", 0)}])
+        overall_summary_text = f"""- **긍정 문장 수**: {results.get('total_pos', 0)}개
+- **부정 문장 수**: {results.get('total_neg', 0)}개
+- **감성어 빈도 (긍정+부정)**: {results.get('total_sentiment_frequency', 0)}개
+- **감성 점수**: {results.get('total_sentiment_score', 50.0):.1f}점 (0~100점)
+- **만족도 변화 (감성점수 - 트렌드지수)**: {results.get('satisfaction_delta', 0):.1f}
+"""
+
+        summary_df_data = {
+            '검색어': name,
+            '감성 빈도': results.get('total_sentiment_frequency', 0),
+            '감성 점수': f"{results.get('total_sentiment_score', 50.0):.1f}",
+            '긍정 문장 수': results.get("total_pos", 0),
+            '부정 문장 수': results.get("total_neg", 0),
+            '축제 기간 (일)': results.get('event_period', 'N/A'),
+            '트렌드 지수 (%)': trend_metrics.get('trend_index', 'N/A'),
+            '만족도 변화': f"{results.get('satisfaction_delta', 0):.1f}",
+            '주요 감성 키워드': str(results.get('emotion_keyword_freq', {}))
+        }
+        summary_df = pd.DataFrame([summary_df_data])
+        
         summary_csv = save_df_to_csv(summary_df, "overall_summary", name)
         blog_df = results.get("blog_results_df", pd.DataFrame())
         blog_list_csv = save_df_to_csv(blog_df, "blog_list", name)
@@ -64,6 +90,7 @@ def package_keyword_results(results: dict, name: str):
             gr.update(value=create_donut_chart(results.get("total_pos", 0), results.get("total_neg", 0), f'{name} 전체 후기 요약'), visible=True),
             gr.update(value=trend_graph, visible=trend_graph is not None),
             gr.update(value=overall_summary_text, visible=True),
+            gr.update(value=trend_summary_text, visible=bool(trend_metrics)),
             gr.update(value=summary_csv, visible=summary_csv is not None),
             gr.update(value=create_stacked_bar_chart(spring_pos, spring_neg, "봄 시즌"), visible=spring_pos > 0 or spring_neg > 0),
             gr.update(value=create_stacked_bar_chart(summer_pos, summer_neg, "여름 시즌"), visible=summer_pos > 0 or summer_neg > 0),
@@ -90,7 +117,7 @@ def package_keyword_results(results: dict, name: str):
         return [f"오류: {e}"] + [gr.update(visible=False)] * (num_outputs - 1)
 
 def package_category_results(results: dict, name: str):
-    num_outputs = 44
+    num_outputs = 48 # 4개의 트렌드 워드클라우드 추가
     if "error" in results: return [results["error"]] + [gr.update(visible=False)] * (num_outputs - 1)
 
     try:
@@ -107,11 +134,26 @@ def package_category_results(results: dict, name: str):
             else:
                 seasonal_pos_wc_paths[season] = None
                 seasonal_neg_wc_paths[season] = None
+        
+        seasonal_trend_wc_paths = results.get("seasonal_trend_wc_paths", {})
 
         cat_neg_summary_text = summarize_negative_feedback(results.get("negative_sentences", []))
-        cat_overall_summary_text = f"""- **긍정 문장 수**: {results.get('total_pos', 0)}개\n- **부정 문장 수**: {results.get('total_neg', 0)}개\n- **감성어 빈도 (긍정+부정)**: {results.get('total_sentiment_frequency', 0)}개\n- **감성 점수**: {results.get('total_sentiment_score', 50.0):.1f}점 (0~100점)"""
+        cat_overall_summary_text = f"""- **긍정 문장 수**: {results.get('total_pos', 0)}개
+- **부정 문장 수**: {results.get('total_neg', 0)}개
+- **감성어 빈도 (긍정+부정)**: {results.get('total_sentiment_frequency', 0)}개
+- **종합 감성 점수 (가중 평균)**: {results.get('total_sentiment_score', 50.0):.1f}점
+- **테마 평균 감성 점수 (단순 평균)**: {results.get('theme_sentiment_avg', 50.0):.1f}점
+"""
 
-        summary_df = pd.DataFrame([{'카테고리': name, '감성 빈도': results.get('total_sentiment_frequency', 0), '감성 점수': f"{results.get('total_sentiment_score', 50.0):.1f}", '긍정 문장 수': results.get("total_pos", 0), '부정 문장 수': results.get("total_neg", 0)}])
+        summary_df_data = {
+            '카테고리': name, 
+            '감성 빈도': results.get('total_sentiment_frequency', 0), 
+            '종합 감성 점수': f"{results.get('total_sentiment_score', 50.0):.1f}",
+            '테마 평균 감성 점수': f"{results.get('theme_sentiment_avg', 50.0):.1f}",
+            '긍정 문장 수': results.get("total_pos", 0), 
+            '부정 문장 수': results.get("total_neg", 0)
+        }
+        summary_df = pd.DataFrame([summary_df_data])
         cat_overall_csv = save_df_to_csv(summary_df, "category_summary", name)
 
         festival_df = results.get("individual_festival_results_df", pd.DataFrame())
@@ -148,6 +190,11 @@ def package_category_results(results: dict, name: str):
             gr.update(value=seasonal_neg_wc_paths.get("가을"), visible=seasonal_neg_wc_paths.get("가을") is not None),
             gr.update(value=seasonal_pos_wc_paths.get("겨울"), visible=seasonal_pos_wc_paths.get("겨울") is not None),
             gr.update(value=seasonal_neg_wc_paths.get("겨울"), visible=seasonal_neg_wc_paths.get("겨울") is not None),
+
+            gr.update(value=seasonal_trend_wc_paths.get("봄"), visible=seasonal_trend_wc_paths.get("봄") is not None),
+            gr.update(value=seasonal_trend_wc_paths.get("여름"), visible=seasonal_trend_wc_paths.get("여름") is not None),
+            gr.update(value=seasonal_trend_wc_paths.get("가을"), visible=seasonal_trend_wc_paths.get("가을") is not None),
+            gr.update(value=seasonal_trend_wc_paths.get("겨울"), visible=seasonal_trend_wc_paths.get("겨울") is not None),
 
             festival_page_df, festival_df, results.get("festival_full_results", []), festival_page_num, festival_pages_str,
             gr.update(value=festival_list_csv, visible=festival_list_csv is not None),
