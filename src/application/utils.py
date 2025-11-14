@@ -209,3 +209,128 @@ def calculate_trend_metrics(trend_df: pd.DataFrame, start_date: datetime, end_da
         return {
             "trend_index": 0, "after_trend_index": 0, "before_avg": 0, "during_avg": 0, "after_avg": 0,
         }
+
+def calculate_satisfaction_boundaries(scores: list) -> dict:
+    """
+    감성 점수 리스트로부터 IQR 기반 이상치를 제거하고,
+    만족도 5단계 분류를 위한 경계값을 계산합니다.
+
+    Returns:
+        dict: {
+            "boundaries": {mean, std, very_dissatisfied_upper, dissatisfied_upper, neutral_upper, satisfied_upper},
+            "filtered_scores": 이상치 제거된 점수 리스트,
+            "outliers": 이상치 리스트
+        }
+    """
+    import numpy as np
+
+    if not scores:
+        return {
+            "boundaries": {},
+            "filtered_scores": [],
+            "outliers": [],
+        }
+
+    q1 = np.percentile(scores, 25)
+    q3 = np.percentile(scores, 75)
+    iqr = q3 - q1
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+
+    filtered_scores = [s for s in scores if lower_bound <= s <= upper_bound]
+    outliers = [s for s in scores if s < lower_bound or s > upper_bound]
+
+    if not filtered_scores:
+        filtered_scores = scores
+
+    mean = np.mean(filtered_scores)
+    std = np.std(filtered_scores)
+
+    # Handle case where all scores are identical
+    if np.isclose(std, 0):
+        std = 0.1
+
+    boundaries = {
+        "mean": mean,
+        "std": std,
+        "very_dissatisfied_upper": mean - 1.5 * std,
+        "dissatisfied_upper": mean - 0.5 * std,
+        "neutral_upper": mean + 0.5 * std,
+        "satisfied_upper": mean + 1.5 * std,
+    }
+    return {
+        "boundaries": boundaries,
+        "filtered_scores": filtered_scores,
+        "outliers": outliers,
+    }
+
+def map_score_to_level(score: float, boundaries: dict) -> int:
+    """
+    감성 점수를 5단계 만족도 레벨로 매핑합니다.
+
+    Args:
+        score: 감성 점수 (-2.0 ~ +2.0 범위)
+        boundaries: calculate_satisfaction_boundaries()로 계산된 경계값 딕셔너리
+
+    Returns:
+        int: 1 (매우 불만족) ~ 5 (매우 만족)
+    """
+    if not boundaries:
+        return 3  # Default to neutral if no boundaries
+    if score < boundaries["very_dissatisfied_upper"]:
+        return 1  # 매우 불만족
+    elif score < boundaries["dissatisfied_upper"]:
+        return 2  # 불만족
+    elif score < boundaries["neutral_upper"]:
+        return 3  # 보통
+    elif score < boundaries["satisfied_upper"]:
+        return 4  # 만족
+    else:
+        return 5  # 매우 만족
+
+def generate_distribution_interpretation(satisfaction_counts: dict, total_count: int, boundaries: dict, avg_satisfaction: float) -> str:
+    """
+    LLM을 사용하여 만족도 분포에 대한 자연어 해석을 생성합니다.
+
+    Args:
+        satisfaction_counts: {'매우 불만족': N, '불만족': N, ...} 형태의 카운트 딕셔너리
+        total_count: 전체 문장 수
+        boundaries: 만족도 경계값 딕셔너리
+        avg_satisfaction: 평균 만족도 (1.0 ~ 5.0)
+
+    Returns:
+        str: 마크다운 형식의 해석 텍스트
+    """
+    try:
+        llm = get_llm_client(model="gemini-2.5-pro")
+
+        # 카운트와 비율 계산
+        labels = ["매우 불만족", "불만족", "보통", "만족", "매우 만족"]
+        counts_str = "\n".join([f"- {label}: {satisfaction_counts.get(label, 0)}개 ({satisfaction_counts.get(label, 0) / total_count * 100:.1f}%)"
+                                for label in labels])
+
+        prompt = f"""다음은 축제 리뷰의 만족도 분포 데이터입니다:
+
+**전체 리뷰 문장 수**: {total_count}개
+**평균 만족도**: {avg_satisfaction:.2f} / 5.0
+
+**만족도 분포**:
+{counts_str}
+
+**통계 정보**:
+- 평균값: {boundaries.get('mean', 0):.2f}
+- 표준편차: {boundaries.get('std', 0):.2f}
+
+위 데이터를 바탕으로 **2-3문장**으로 만족도 분포를 해석해주세요.
+- 어느 만족도 구간이 가장 많은지
+- 전반적인 평가 경향은 어떠한지
+- 특이사항이 있다면 무엇인지
+
+간결하고 명확하게 작성해주세요."""
+
+        response = llm.invoke(prompt)
+        return response.content.strip()
+    except Exception as e:
+        print(f"만족도 분포 해석 생성 중 오류: {e}")
+        traceback.print_exc()
+        return f"평균 만족도는 {avg_satisfaction:.2f} / 5.0점입니다. 총 {total_count}개의 리뷰 문장이 분석되었습니다."

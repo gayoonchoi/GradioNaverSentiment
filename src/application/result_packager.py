@@ -3,7 +3,13 @@ import gradio as gr
 import pandas as pd
 import os
 from .utils import save_df_to_csv, change_page, summarize_negative_feedback, create_festinsight_table, create_festinsight_table_for_category
-from ..infrastructure.reporting.charts import create_donut_chart, create_stacked_bar_chart
+from ..infrastructure.reporting.charts import (
+    create_donut_chart,
+    create_stacked_bar_chart,
+    create_satisfaction_level_bar_chart,
+    create_absolute_score_line_chart,
+    create_outlier_boxplot
+)
 # create_wordcloud 대신 create_sentiment_wordclouds를 임포트
 from ..infrastructure.reporting.wordclouds import create_sentiment_wordclouds
 import traceback
@@ -16,8 +22,8 @@ SEASON_EN_MAP = {
 }
 
 def package_keyword_results(results: dict, name: str):
-    # 출력 개수: FestInsight CSV 추가로 32개
-    num_outputs = 32
+    # 출력 개수: 만족도 분석 추가로 36개 (기존 32 + 4)
+    num_outputs = 36
     if "error" in results: return [results["error"]] + [gr.update(visible=False)] * (num_outputs - 1)
 
     try:
@@ -125,6 +131,22 @@ def package_keyword_results(results: dict, name: str):
         trend_graph = results.get("trend_graph")
         focused_trend_graph = results.get("focused_trend_graph")
 
+        # 만족도 분석 차트 생성
+        all_scores = results.get("all_scores", [])
+        satisfaction_counts = results.get("satisfaction_counts", {})
+        distribution_interpretation = results.get("distribution_interpretation", "")
+
+        satisfaction_chart = None
+        absolute_chart = None
+        outlier_chart = None
+
+        if satisfaction_counts:
+            satisfaction_chart = create_satisfaction_level_bar_chart(satisfaction_counts, f"{name} 상대적 만족도 분포")
+
+        if all_scores:
+            absolute_chart = create_absolute_score_line_chart(all_scores, f"{name} 절대 점수 분포")
+            outlier_chart = create_outlier_boxplot(all_scores, f"{name} 감성 점수 이상치")
+
         return (
             results.get("status", "분석 완료"),
             results.get("url_markdown", "분석된 URL 없음"),
@@ -153,6 +175,11 @@ def package_keyword_results(results: dict, name: str):
             initial_page_df, df_for_state, results.get("blog_judgments", []),
             current_page, total_pages_str,
             gr.update(value=blog_list_csv, visible=blog_list_csv is not None),
+            # 만족도 분석 출력 (4개 추가)
+            gr.update(value=distribution_interpretation, visible=bool(distribution_interpretation)),
+            gr.update(value=satisfaction_chart, visible=satisfaction_chart is not None),
+            gr.update(value=absolute_chart, visible=absolute_chart is not None),
+            gr.update(value=outlier_chart, visible=outlier_chart is not None),
             gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False, open=False)
         )
     except Exception as e:

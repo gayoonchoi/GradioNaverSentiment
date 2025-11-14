@@ -20,6 +20,15 @@ def create_keyword_analysis_outputs():
             with gr.Row():
                 overall_csv_output = gr.File(label="종합 분석 결과 (CSV) 다운로드", visible=False)
                 festinsight_csv_output = gr.File(label="FestInsight 분석 테이블 (CSV) 다운로드", visible=False)
+
+            with gr.Accordion("만족도 5단계 분석 (NEW)", open=True):
+                distribution_interpretation_output = gr.Markdown(label="만족도 분포 해석", visible=False)
+                with gr.Row():
+                    satisfaction_chart_output = gr.Plot(label="상대적 만족도 분포 (5단계)", visible=False)
+                    absolute_chart_output = gr.Plot(label="절대 점수 분포", visible=False)
+                with gr.Row():
+                    outlier_chart_output = gr.Plot(label="감성 점수 이상치 분석 (BoxPlot)", visible=False)
+
             with gr.Accordion("계절별 상세 분석", open=False) as seasonal_accordion:
                 with gr.Row():
                     spring_chart_output = gr.Plot(label="봄 시즌", visible=False, scale=1)
@@ -79,6 +88,8 @@ def create_keyword_analysis_outputs():
         autumn_pos_wc_output, autumn_neg_wc_output,
         winter_pos_wc_output, winter_neg_wc_output,
         blog_results_output, blog_results_df, blog_judgments_state, blog_page_num_input, blog_total_pages_output, blog_list_csv_output,
+        # 만족도 분석 추가 (4개)
+        distribution_interpretation_output, satisfaction_chart_output, absolute_chart_output, outlier_chart_output,
         individual_donut_chart, individual_score_chart, individual_summary_output, blog_detail_accordion
     ]
 

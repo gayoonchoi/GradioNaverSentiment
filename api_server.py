@@ -1,0 +1,335 @@
+# GradioNaverSentiment FastAPI Backend Server
+import os
+import sys
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
+import uvicorn
+import traceback
+
+# 프로젝트 경로 추가
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# 환경 설정
+from src.config import setup_environment
+setup_environment()
+
+# 애플리케이션 임포트
+from src.application.analysis_logic import (
+    analyze_single_keyword_fully,
+    perform_category_analysis
+)
+from src.data.festival_loader import (
+    load_festival_data,
+    get_cat1_choices,
+    get_cat2_choices,
+    get_cat3_choices,
+    get_festivals
+)
+from src.application.utils import create_driver
+
+# FastAPI 앱 생성
+app = FastAPI(
+    title="GradioNaverSentiment API",
+    description="Festival sentiment analysis API for festival planners",
+    version="2.0.0"
+)
+
+# CORS 설정 (React 프론트엔드와 통신)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],  # Vite 기본 포트
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 전역 WebDriver (재사용)
+driver = None
+
+@app.on_event("startup")
+async def startup_event():
+    """서버 시작 시 WebDriver 초기화"""
+    global driver
+    try:
+        driver = create_driver()
+        print("[OK] WebDriver initialized successfully")
+    except Exception as e:
+        print(f"[WARN] WebDriver initialization failed: {e}")
+        driver = None
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """서버 종료 시 WebDriver 정리"""
+    global driver
+    if driver:
+        try:
+            driver.quit()
+            print("[OK] WebDriver closed")
+        except:
+            pass
+
+# Pydantic 모델
+class KeywordAnalysisRequest(BaseModel):
+    keyword: str
+    num_reviews: int = 10
+    log_details: bool = True
+
+class CategoryAnalysisRequest(BaseModel):
+    cat1: str
+    cat2: str
+    cat3: str
+    num_reviews: int = 10
+
+class ComparisonRequest(BaseModel):
+    keyword_a: str
+    keyword_b: str
+    num_reviews: int = 10
+
+# ==================== 엔드포인트 ====================
+
+@app.get("/")
+async def root():
+    """Health check"""
+    return {
+        "service": "GradioNaverSentiment API",
+        "status": "running",
+        "version": "2.0.0",
+        "description": "Festival sentiment analysis for planners"
+    }
+
+@app.get("/api/config/categories")
+async def get_categories():
+    """카테고리 1단계 목록 반환"""
+    try:
+        festival_data = load_festival_data()
+        return {"categories": get_cat1_choices(festival_data)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/config/categories/medium")
+async def get_medium_categories(cat1: str):
+    """카테고리 2단계 목록 반환"""
+    try:
+        festival_data = load_festival_data()
+        return {"categories": get_cat2_choices(festival_data, cat1)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/config/categories/small")
+async def get_small_categories(cat1: str, cat2: str):
+    """카테고리 3단계 목록 반환"""
+    try:
+        festival_data = load_festival_data()
+        return {"categories": get_cat3_choices(festival_data, cat1, cat2)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/config/festivals")
+async def get_festival_list(cat1: str, cat2: str, cat3: str):
+    """선택한 카테고리의 축제 목록 반환"""
+    try:
+        festival_data = load_festival_data()
+        festivals = get_festivals(festival_data, cat1, cat2, cat3)
+        return {"festivals": festivals}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/analyze/keyword")
+async def analyze_keyword(request: KeywordAnalysisRequest):
+    """
+    단일 키워드 감성 분석
+
+    Returns:
+        - status: 분석 상태
+        - total_pos/neg: 긍정/부정 문장 수
+        - satisfaction_counts: 만족도 5단계 분포
+        - distribution_interpretation: LLM 해석 텍스트
+        - charts: 차트 데이터 (만족도, 이상치, 절대점수 등)
+        - blog_results: 개별 블로그 분석 결과
+        - seasonal_data: 계절별 데이터
+    """
+    global driver
+    if not driver:
+        driver = create_driver()
+
+    try:
+        print(f"📊 분석 시작: {request.keyword}, {request.num_reviews}개 리뷰")
+
+        # 프로그레스 없이 직접 호출
+        class DummyProgress:
+            def __call__(self, *args, **kwargs):
+                pass
+
+        progress = DummyProgress()
+
+        # analysis_logic.py의 함수 직접 호출
+        results = analyze_single_keyword_fully(
+            keyword=request.keyword,
+            num_reviews=request.num_reviews,
+            driver=driver,
+            log_details=request.log_details,
+            progress=progress,
+            progress_desc="API 분석"
+        )
+
+        if "error" in results:
+            raise HTTPException(status_code=400, detail=results["error"])
+
+        # 결과를 API 응답 형식으로 변환
+        response = {
+            "status": results.get("status", "분석 완료"),
+            "keyword": request.keyword,
+            "total_pos": results.get("total_pos", 0),
+            "total_neg": results.get("total_neg", 0),
+            "avg_satisfaction": results.get("avg_satisfaction", 3.0),
+            "satisfaction_counts": results.get("satisfaction_counts", {}),
+            "distribution_interpretation": results.get("distribution_interpretation", ""),
+            "all_scores": results.get("all_scores", []),
+            "outliers": results.get("outliers", []),
+            "seasonal_data": results.get("seasonal_data", {}),
+            "blog_results": results.get("blog_results_df", {}).to_dict('records') if hasattr(results.get("blog_results_df"), 'to_dict') else [],
+            "negative_summary": results.get("negative_sentences", []),
+            "trend_metrics": results.get("trend_metrics", {}),
+            "url_markdown": results.get("url_markdown", ""),
+        }
+
+        print(f"[OK] 분석 완료: {request.keyword}")
+        return response
+
+    except Exception as e:
+        print(f"[ERROR] 분석 중 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
+
+@app.post("/api/analyze/category")
+async def analyze_category(request: CategoryAnalysisRequest):
+    """
+    카테고리별 축제 분석
+
+    선택한 카테고리의 모든 축제를 분석하여 종합 결과 제공
+    """
+    global driver
+    if not driver:
+        driver = create_driver()
+
+    try:
+        print(f"📊 카테고리 분석 시작: {request.cat1} > {request.cat2} > {request.cat3}")
+
+        class DummyProgress:
+            def __call__(self, *args, **kwargs):
+                pass
+
+        progress = DummyProgress()
+
+        results = perform_category_analysis(
+            cat1=request.cat1,
+            cat2=request.cat2,
+            cat3=request.cat3,
+            num_reviews=request.num_reviews,
+            driver=driver,
+            log_details=True,
+            progress=progress,
+            initial_progress=0,
+            total_steps=1
+        )
+
+        if "error" in results:
+            raise HTTPException(status_code=400, detail=results["error"])
+
+        response = {
+            "status": results.get("status", "분석 완료"),
+            "category": f"{request.cat1} > {request.cat2} > {request.cat3}",
+            "total_festivals": results.get("total_festivals", 0),
+            "analyzed_festivals": results.get("analyzed_festivals", 0),
+            "overall_summary": results.get("overall_summary_df", {}).to_dict('records') if hasattr(results.get("overall_summary_df"), 'to_dict') else [],
+            "individual_results": results.get("individual_festival_results_df", {}).to_dict('records') if hasattr(results.get("individual_festival_results_df"), 'to_dict') else [],
+            "seasonal_data": results.get("seasonal_data", {}),
+        }
+
+        print(f"[OK] 카테고리 분석 완료")
+        return response
+
+    except Exception as e:
+        print(f"[ERROR] 카테고리 분석 중 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
+
+@app.post("/api/analyze/comparison")
+async def analyze_comparison(request: ComparisonRequest):
+    """
+    2개 키워드 비교 분석
+    """
+    global driver
+    if not driver:
+        driver = create_driver()
+
+    try:
+        print(f"📊 비교 분석 시작: {request.keyword_a} vs {request.keyword_b}")
+
+        class DummyProgress:
+            def __call__(self, *args, **kwargs):
+                pass
+
+        progress = DummyProgress()
+
+        # 두 키워드를 각각 분석
+        results_a = analyze_single_keyword_fully(
+            keyword=request.keyword_a,
+            num_reviews=request.num_reviews,
+            driver=driver,
+            log_details=True,
+            progress=progress,
+            progress_desc="비교(A)"
+        )
+
+        results_b = analyze_single_keyword_fully(
+            keyword=request.keyword_b,
+            num_reviews=request.num_reviews,
+            driver=driver,
+            log_details=True,
+            progress=progress,
+            progress_desc="비교(B)"
+        )
+
+        if "error" in results_a:
+            raise HTTPException(status_code=400, detail=f"축제 A 분석 실패: {results_a['error']}")
+        if "error" in results_b:
+            raise HTTPException(status_code=400, detail=f"축제 B 분석 실패: {results_b['error']}")
+
+        response = {
+            "status": "비교 분석 완료",
+            "keyword_a": request.keyword_a,
+            "keyword_b": request.keyword_b,
+            "results_a": {
+                "total_pos": results_a.get("total_pos", 0),
+                "total_neg": results_a.get("total_neg", 0),
+                "avg_satisfaction": results_a.get("avg_satisfaction", 3.0),
+                "satisfaction_counts": results_a.get("satisfaction_counts", {}),
+                "distribution_interpretation": results_a.get("distribution_interpretation", ""),
+            },
+            "results_b": {
+                "total_pos": results_b.get("total_pos", 0),
+                "total_neg": results_b.get("total_neg", 0),
+                "avg_satisfaction": results_b.get("avg_satisfaction", 3.0),
+                "satisfaction_counts": results_b.get("satisfaction_counts", {}),
+                "distribution_interpretation": results_b.get("distribution_interpretation", ""),
+            },
+            "comparison_summary": f"{request.keyword_a}와 {request.keyword_b}의 비교 분석이 완료되었습니다.",
+        }
+
+        print(f"[OK] 비교 분석 완료")
+        return response
+
+    except Exception as e:
+        print(f"[ERROR] 비교 분석 중 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
+
+# 서버 실행
+if __name__ == "__main__":
+    print("[START] GradioNaverSentiment API Server Starting...")
+    print("[INFO] Swagger UI: http://localhost:8001/docs")
+    print("[INFO] Frontend: http://localhost:5173 (Vite)")
+    uvicorn.run(app, host="0.0.0.0", port=8001)

@@ -106,3 +106,105 @@ def create_sentence_score_bar_chart(judgments: list, title: str) -> Figure | Non
     plt.grid(axis='x', linestyle='--', alpha=0.6)
     plt.tight_layout()
     return fig
+
+def create_satisfaction_level_bar_chart(satisfaction_counts: dict, title: str) -> Figure | None:
+    """
+    만족도 레벨(5단계)별 문장 수를 막대 그래프로 생성합니다.
+    satisfaction_counts: {'매우 불만족': 10, '불만족': 20, ...} 형태의 딕셔너리
+    """
+    from matplotlib.ticker import MaxNLocator
+
+    if not satisfaction_counts or sum(satisfaction_counts.values()) == 0:
+        return None
+
+    labels = ["매우 불만족", "불만족", "보통", "만족", "매우 만족"]
+    counts = [satisfaction_counts.get(label, 0) for label in labels]
+
+    colors = {
+        '매우 불만족': '#FF5733',
+        '불만족': '#FF8C33',
+        '보통': '#FFC300',
+        '만족': '#A2D9A0',
+        '매우 만족': '#4CAF50'
+    }
+    bar_colors = [colors[label] for label in labels]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    bars = ax.bar(labels, counts, color=bar_colors)
+
+    ax.set_title(title, fontsize=16, pad=20)
+    ax.set_xlabel('만족도', fontsize=12)
+    ax.set_ylabel('문장 수', fontsize=12)
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+    # 각 막대 위에 문장 수 표시
+    for bar in bars:
+        yval = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2.0, yval, int(yval), va='bottom', ha='center', fontsize=10)
+
+    # Y축을 정수 눈금으로 설정
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+    plt.tight_layout()
+    return fig
+
+def create_absolute_score_line_chart(scores: list, title: str) -> Figure | None:
+    """
+    절대적인 고정 점수 구간에 대한 문장 수 분포를 꺾은선 그래프로 생성합니다.
+    """
+    from matplotlib.ticker import MaxNLocator
+    import numpy as np
+
+    if not scores:
+        return None
+
+    # 고정된 구간(bin) 설정
+    bins = [-np.inf, -2.0, -1.0, 0.0, 1.0, 2.0, np.inf]
+    labels = ['매우 부정\n(<-2)', '부정\n(-2~-1)', '약간 부정\n(-1~0)', '약간 긍정\n(0~1)', '긍정\n(1~2)', '매우 긍정\n(>2)']
+
+    # 각 구간에 속하는 점수의 개수 계산
+    hist, _ = np.histogram(scores, bins=bins)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # 꺾은선 그래프 생성
+    ax.plot(labels, hist, marker='o', linestyle='-', color='dodgerblue', linewidth=2, markersize=8)
+
+    # 각 점 위에 문장 수 표시
+    for i, count in enumerate(hist):
+        ax.text(i, count, str(count), ha='center', va='bottom', fontsize=10, weight='bold')
+
+    ax.set_title(title, fontsize=16, pad=20)
+    ax.set_xlabel('절대 감성 점수 구간', fontsize=12)
+    ax.set_ylabel('문장 수', fontsize=12)
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+    # Y축을 정수 눈금으로 설정
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+    plt.tight_layout()
+    return fig
+
+def create_outlier_boxplot(scores: list, title: str) -> Figure | None:
+    """
+    감성 점수의 이상치를 박스플롯으로 시각화합니다.
+    """
+    if not scores:
+        return None
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+
+    # Box plot
+    ax.boxplot(scores, vert=False, patch_artist=True,
+                     boxprops=dict(facecolor='lightblue'),
+                     medianprops=dict(color='red', linewidth=2),
+                     whiskerprops=dict(color='blue'),
+                     capprops=dict(color='black'),
+                     flierprops=dict(marker='o', markerfacecolor='red', markersize=8, alpha=0.6))
+
+    ax.set_xlabel('감성 점수', fontsize=12)
+    ax.set_title(title, fontsize=16, pad=20)
+    ax.grid(axis='x', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    return fig

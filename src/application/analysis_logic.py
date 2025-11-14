@@ -33,6 +33,7 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
     candidate_blogs, blog_results_list, all_negative_sentences = [], [], []
     blog_judgments_list = []
     emotion_keywords = []
+    all_scores = []  # 만족도 계산을 위한 전체 점수 수집
     seasonal_aspect_pairs = {"봄": [], "여름": [], "가을": [], "겨울": [], "정보없음": []}
     seasonal_texts = {"봄": [], "여름": [], "가을": [], "겨울": [], "정보없음": []}
     total_pos, total_neg, total_searched, start_index = 0, 0, 0, 1
@@ -99,10 +100,15 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
             if aspect_pairs:
                 seasonal_aspect_pairs[season].extend(aspect_pairs)
 
+            # 점수 수집 (만족도 계산용)
+            for j in judgments:
+                if "score" in j:
+                    all_scores.append(j["score"])
+
             blog_judgments_list.append(judgments)
             pos_count = sum(1 for res in judgments if res["final_verdict"] == "긍정")
             neg_count = sum(1 for res in judgments if res["final_verdict"] == "부정")
-            
+
             strong_pos_count = sum(1 for res in judgments if res["final_verdict"] == "긍정" and res["score"] >= 1.0)
             strong_neg_count = sum(1 for res in judgments if res["final_verdict"] == "부정" and res["score"] < -1.0)
 
@@ -133,6 +139,53 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
             continue
 
     if not valid_blogs_data: return {"error": f"'{keyword}'에 대한 유효한 후기 블로그를 찾지 못했습니다 (후보 {len(candidate_blogs)}개 확인)."}
+
+    # 만족도 5단계 분류 계산
+    from .utils import calculate_satisfaction_boundaries, map_score_to_level, generate_distribution_interpretation
+    import numpy as np
+
+    boundary_results = calculate_satisfaction_boundaries(all_scores)
+    boundaries = boundary_results["boundaries"]
+    outliers = boundary_results["outliers"]
+
+    # 각 judgment에 만족도 레벨 추가
+    all_satisfaction_levels = []
+    level_map = {1: "매우 불만족", 2: "불만족", 3: "보통", 4: "만족", 5: "매우 만족"}
+
+    for i, judgments in enumerate(blog_judgments_list):
+        for j in judgments:
+            if "score" in j:
+                level = map_score_to_level(j["score"], boundaries)
+                j["satisfaction_level"] = level
+                all_satisfaction_levels.append(level)
+
+    # 만족도 카운트 집계
+    satisfaction_counts = Counter([level_map.get(level, "보통") for level in all_satisfaction_levels])
+    avg_satisfaction = np.mean(all_satisfaction_levels) if all_satisfaction_levels else 3.0
+
+    # LLM을 사용한 분포 해석 생성
+    distribution_interpretation = ""
+    if all_satisfaction_levels:
+        try:
+            distribution_interpretation = generate_distribution_interpretation(
+                satisfaction_counts, len(all_satisfaction_levels), boundaries, avg_satisfaction
+            )
+        except Exception as e:
+            print(f"만족도 분포 해석 생성 중 오류: {e}")
+            distribution_interpretation = f"평균 만족도: {avg_satisfaction:.2f} / 5.0"
+
+    # blog_results_list 업데이트 (만족도 레벨 포함)
+    for i, blog_result in enumerate(blog_results_list):
+        if i < len(blog_judgments_list):
+            judgments = blog_judgments_list[i]
+            # 문장 요약에 만족도 레벨 추가
+            blog_result["긍/부정 문장 요약"] = "\n---\n".join([
+                f"[{res['final_verdict']}({res.get('satisfaction_level', 3)}점)] {res['sentence']}"
+                for res in judgments
+            ])
+            # 평균 만족도 추가
+            blog_satisfaction_levels = [j.get("satisfaction_level", 3) for j in judgments]
+            blog_result["평균 만족도"] = f"{np.mean(blog_satisfaction_levels):.2f} / 5" if blog_satisfaction_levels else "N/A"
 
     total_sentiment_frequency = total_pos + total_neg
     total_sentiment_score = ((total_strong_pos - total_strong_neg) / total_sentiment_frequency * 50 + 50) if total_sentiment_frequency > 0 else 50.0
@@ -176,6 +229,13 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
         "trend_metrics": trend_metrics,
         "satisfaction_delta": satisfaction_delta,
         "emotion_keyword_freq": dict(emotion_keyword_freq.most_common(20)), # 상위 20개만
+        # 만족도 분석 데이터 추가
+        "all_scores": all_scores,
+        "satisfaction_counts": dict(satisfaction_counts),
+        "avg_satisfaction": avg_satisfaction,
+        "distribution_interpretation": distribution_interpretation,
+        "satisfaction_boundaries": boundaries,
+        "outliers": outliers,
         "seasonal_texts": {k: "\n".join(v) for k, v in seasonal_texts.items()},
         "seasonal_aspect_pairs": seasonal_aspect_pairs
     }
