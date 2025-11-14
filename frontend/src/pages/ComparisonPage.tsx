@@ -67,8 +67,8 @@ export default function ComparisonPage() {
             </label>
             <input
               type="range"
-              min="5"
-              max="30"
+              min="1"
+              max="20"
               value={numReviews}
               onChange={(e) => setNumReviews(Number(e.target.value))}
               className="w-full"

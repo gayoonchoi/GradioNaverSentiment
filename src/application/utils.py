@@ -1,4 +1,5 @@
 # src/application/utils.py
+import os
 import pandas as pd
 import re
 import math
@@ -30,14 +31,17 @@ def change_page(full_df, page_num):
 
 def get_season(postdate: str) -> str:
     try:
-        if not postdate or len(postdate) < 6: # 유효성 검사 추가
-             return "정보없음"
-        month = int(postdate[4:6])
+        # 숫자만 추출하여 YYYYMMDD 형식으로 만듭니다.
+        cleaned_date = re.sub(r'\D', '', postdate)
+        if not cleaned_date or len(cleaned_date) < 6:
+            return "정보없음"
+        
+        month = int(cleaned_date[4:6])
         if month in [3, 4, 5]: return "봄"
         elif month in [6, 7, 8]: return "여름"
         elif month in [9, 10, 11]: return "가을"
         else: return "겨울"
-    except:
+    except (ValueError, IndexError):
         return "정보없음"
 
 def save_df_to_csv(df: pd.DataFrame, base_name: str, keyword: str) -> str:
@@ -128,18 +132,51 @@ def create_festinsight_table_for_category(results: dict, category_name: str) -> 
         return pd.DataFrame()
 
 def summarize_negative_feedback(sentences: list) -> str:
-    if not sentences: return ""
+    if not sentences:
+        if os.environ.get("LOG_DEBUG") == "true":
+            print("[DEBUG] summarize_negative_feedback: No sentences provided, returning empty string.")
+        return ""
     try:
-        llm = get_llm_client(model="gemini-2.5-pro") # 모델명 확인
-        unique_sentences = sorted(list(set(filter(None, sentences))), key=len, reverse=True) # None 값 제거
-        if not unique_sentences: return "" # 빈 리스트 처리
+        llm = get_llm_client(model="gemini-2.5-pro")
+
+        if os.environ.get("LOG_DEBUG") == "true":
+            print(f"[DEBUG] summarize_negative_feedback: Received {len(sentences)} sentences.")
+            print(f"[DEBUG] First 3 sentences: {sentences[:3]}")
+
+        # 빈 문장, None, 너무 짧은 문장(3자 미만) 필터링
+        filtered_sentences = [s for s in sentences if s and isinstance(s, str) and len(s.strip()) >= 3]
+
+        if os.environ.get("LOG_DEBUG") == "true":
+            print(f"[DEBUG] After basic filtering: {len(filtered_sentences)} sentences")
+
+        unique_sentences = sorted(list(set(filtered_sentences)), key=len, reverse=True)
+
+        if not unique_sentences:
+            if os.environ.get("LOG_DEBUG") == "true":
+                print("[DEBUG] summarize_negative_feedback: No unique sentences after filtering, returning empty string.")
+            # 부정 판정은 있지만 문장이 없는 경우를 위한 명시적 메시지
+            return ""
 
         negative_feedback_str = "\n- ".join(unique_sentences[:50])
+        
+        if os.environ.get("LOG_DEBUG") == "true":
+            print(f"[DEBUG] summarize_negative_feedback: negative_feedback_str length: {len(negative_feedback_str)}")
+            print(f"[DEBUG] negative_feedback_str (first 200 chars): {negative_feedback_str[:200]}")
+
         prompt = f'''[수집된 부정적인 의견]\n- {negative_feedback_str}\n\n[요청] 위 의견들을 종합하여 주요 불만 사항을 1., 2., 3. ... 형식의 목록으로 요약해주세요. 만약 의견이 없다면 '특별한 불만 사항 없음'이라고 답해주세요.'''
+        
+        if os.environ.get("LOG_DEBUG") == "true":
+            print(f"[DEBUG] summarize_negative_feedback: LLM Prompt (first 500 chars): {prompt[:500]}")
+
         response = llm.invoke(prompt)
+        
+        if os.environ.get("LOG_DEBUG") == "true":
+            print(f"[DEBUG] summarize_negative_feedback: LLM Response: {response.content.strip()}")
+
         return response.content.strip()
     except Exception as e:
         print(f"부정적 의견 요약 중 오류 발생: {e}")
+        traceback.print_exc()
         return "부정적 의견을 요약하는 데 실패했습니다."
 
 def create_driver():
@@ -334,3 +371,49 @@ def generate_distribution_interpretation(satisfaction_counts: dict, total_count:
         print(f"만족도 분포 해석 생성 중 오류: {e}")
         traceback.print_exc()
         return f"평균 만족도는 {avg_satisfaction:.2f} / 5.0점입니다. 총 {total_count}개의 리뷰 문장이 분석되었습니다."
+
+def generate_overall_summary(results: dict) -> str:
+    """
+    LLM을 사용하여 전체 분석 결과에 대한 종합 평가를 생성합니다.
+    """
+    try:
+        llm = get_llm_client(model="gemini-2.5-pro")
+        
+        # 프롬프트에 사용할 주요 지표 추출
+        keyword = results.get('keyword', '해당 축제')
+        avg_satisfaction = results.get('avg_satisfaction', 3.0)
+        total_pos = results.get('total_pos', 0)
+        total_neg = results.get('total_neg', 0)
+        pos_ratio = (total_pos / (total_pos + total_neg) * 100) if (total_pos + total_neg) > 0 else 0
+        trend_index = results.get('trend_metrics', {}).get('trend_index', 0)
+        distribution_interpretation = results.get('distribution_interpretation', '데이터 없음')
+        negative_summary = results.get('negative_summary', '데이터 없음')
+
+        prompt = f"""
+        **{keyword}**에 대한 종합 분석 결과입니다. 아래 데이터를 바탕으로 전문가 입장에서 최종 평가를 내려주세요.
+
+        ### 주요 지표
+        - **평균 만족도**: {avg_satisfaction:.2f} / 5.0
+        - **긍정/부정 비율**: 긍정 {pos_ratio:.1f}% / 부정 {100-pos_ratio:.1f}%
+        - **화제성 (트렌드 지수)**: {trend_index:.1f} (100 이상이면 평균 이상)
+        
+        ### AI 분석 요약
+        - **만족도 분포 해석**: {distribution_interpretation}
+        - **주요 불만 사항**: {negative_summary}
+
+        ### 최종 평가 요청
+        위 모든 정보를 종합하여, 다음 항목을 포함하는 최종 평가를 마크다운 형식으로 작성해주세요.
+        1.  **한줄 요약**: 이 축제의 핵심적인 평가를 한 문장으로 요약합니다. (예: "화제성은 높지만, 주차 문제 등 운영 개선이 필요한 축제입니다.")
+        2.  **종합 의견**: 전반적인 긍정/부정 여론, 만족도 수준, 화제성을 종합적으로 고려한 상세 의견을 2-3문장으로 작성합니다.
+        3.  **강점 (Pros)**: 분석 결과에서 나타난 긍정적인 측면을 1-2가지 항목으로 요약합니다.
+        4.  **개선점 (Cons)**: '주요 불만 사항'을 바탕으로 개선이 필요한 부분을 1-2가지 항목으로 요약합니다.
+
+        결과는 반드시 마크다운 형식으로, 각 항목을 명확하게 구분하여 작성해야 합니다.
+        """
+
+        response = llm.invoke(prompt)
+        return response.content.strip()
+    except Exception as e:
+        print(f"종합 평가 생성 중 오류: {e}")
+        traceback.print_exc()
+        return "종합 평가를 생성하는 데 실패했습니다."

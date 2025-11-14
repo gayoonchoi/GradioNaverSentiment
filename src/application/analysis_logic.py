@@ -6,13 +6,15 @@ import gradio as gr
 import os
 from datetime import datetime
 from ..data import festival_loader
-from .utils import get_season, summarize_negative_feedback, calculate_trend_metrics
+from .utils import get_season, summarize_negative_feedback, calculate_trend_metrics, generate_overall_summary
 from ..application.graph import app_llm_graph
 from ..infrastructure.web.naver_api import search_naver_blog_page
 from ..infrastructure.web.scraper import scrape_blog_content
 from ..infrastructure.web.naver_trend_api import create_trend_graph, create_focused_trend_graph
 from ..infrastructure.web.tour_api_client import get_festival_period
+from ..infrastructure.reporting.wordclouds import create_sentiment_wordclouds
 from collections import Counter
+from src.domain.knowledge_base import knowledge_base
 
 def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_details: bool, progress: gr.Progress, progress_desc: str):
     # TourAPI에서 축제 기간 가져오기
@@ -27,6 +29,14 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
             start_date, end_date = None, None
     else:
         start_date, end_date = None, None
+
+    # TourAPI에서 축제 상세 정보 가져오기
+    from ..infrastructure.web.tour_api_client import get_festival_details
+    festival_details = get_festival_details(keyword)
+    addr1 = festival_details.get('addr1') if festival_details else None
+    addr2 = festival_details.get('addr2') if festival_details else None
+    areaCode = festival_details.get('areacode') if festival_details else None
+
 
     search_keyword = f"{keyword} 후기"
     max_candidates = max(50, num_reviews * 10)
@@ -88,11 +98,27 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
 
             judgments = final_state.get("final_judgments", [])
             if not judgments: continue
-            
+
+            # 감성어 추출 로직 보강
+            all_sentiment_words = set(knowledge_base.adjectives.keys()) | \
+                                  set(knowledge_base.adverbs.keys()) | \
+                                  set(knowledge_base.sentiment_nouns.keys()) | \
+                                  set(knowledge_base.idioms.keys())
+
             for j in judgments:
+                keyword_found = False
                 if j.get("sentiment_keyword"):
                     emotion_keywords.append(j["sentiment_keyword"])
-
+                    keyword_found = True
+                
+                # LLM이 키워드를 못찾았을 경우, 규칙 기반으로 재탐색
+                if not keyword_found and j.get("final_verdict") in ["긍정", "부정"]:
+                    sentence_words = j.get("sentence", "").split()
+                    for word in sentence_words:
+                        if word in all_sentiment_words:
+                            emotion_keywords.append(word)
+                            break # 문장 당 첫번째 키워드만 추가
+            
             season = get_season(blog_data.get('postdate', ''))
             seasonal_texts[season].append(content)
             
@@ -130,7 +156,8 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
                 "블로그 제목": blog_data["title"], "링크": blog_data["link"], "감성 빈도": sentiment_frequency, 
                 "감성 점수": f"{sentiment_score:.1f}", "긍정 문장 수": pos_count, "부정 문장 수": neg_count,
                 "긍정 비율 (%)": f"{pos_perc:.1f}", "부정 비율 (%)": f"{neg_perc:.1f}",
-                "긍/부정 문장 요약": "\n---\n".join([f"[{res['final_verdict']}] {res['sentence']}" for res in judgments])
+                "긍/부정 문장 요약": "\n---\n".join([f"[{res['final_verdict']}] {res['sentence']}" for res in judgments]),
+                "judgments": judgments # 원본 judgments 리스트 추가
             })
             valid_blogs_data.append(blog_data)
         except Exception as e:
@@ -210,19 +237,68 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
 
     emotion_keyword_freq = Counter(emotion_keywords)
 
+    # 계절별 워드클라우드 생성
+    seasonal_word_clouds = {"봄": {}, "여름": {}, "가을": {}, "겨울": {}}
+    SEASON_MASK_MAP = {
+        "봄": "spring",
+        "여름": "summer",
+        "가을": "fall",
+        "겨울": "winter"
+    }
+    for season, pairs in seasonal_aspect_pairs.items():
+        if season == "정보없음" or not pairs:
+            continue
+        
+        season_en = SEASON_MASK_MAP.get(season)
+        mask_path = None
+        if season_en:
+            mask_path = os.path.abspath(os.path.join("assets", f"mask_{season_en}.png"))
+
+        pos_wc_path, neg_wc_path = create_sentiment_wordclouds(pairs, f"{keyword}_{season}", mask_path=mask_path)
+        
+        if pos_wc_path:
+            seasonal_word_clouds[season]['positive'] = f"/images/{os.path.basename(pos_wc_path)}"
+        if neg_wc_path:
+            seasonal_word_clouds[season]['negative'] = f"/images/{os.path.basename(neg_wc_path)}"
+
+    # URL 경로로 변환
+    trend_graph_url = f"/images/{os.path.basename(trend_graph_path)}" if trend_graph_path else None
+    focused_trend_graph_url = f"/images/{os.path.basename(focused_trend_graph_path)}" if focused_trend_graph_path else None
+
+    # 최종 요약 생성
+    negative_summary = summarize_negative_feedback(all_negative_sentences)
+    
+    # 임시 결과 객체 생성 (전체 요약 생성에 필요)
+    temp_results = {
+        "keyword": keyword,
+        "avg_satisfaction": avg_satisfaction,
+        "total_pos": total_pos,
+        "total_neg": total_neg,
+        "trend_metrics": trend_metrics,
+        "distribution_interpretation": distribution_interpretation,
+        "negative_summary": negative_summary
+    }
+    overall_summary = generate_overall_summary(temp_results)
+
+
     return {
         "status": f"총 {total_searched}개 검색, {len(candidate_blogs)}개 후보 중 {len(valid_blogs_data)}개 블로그 최종 분석 완료.",
         "total_pos": total_pos, "total_neg": total_neg, "total_strong_pos": total_strong_pos, "total_strong_neg": total_strong_neg,
         "total_sentiment_frequency": total_sentiment_frequency, "total_sentiment_score": total_sentiment_score,
         "seasonal_data": seasonal_data,
-        "negative_sentences": all_negative_sentences,
+        "seasonal_word_clouds": seasonal_word_clouds,
+        "negative_summary": negative_summary, # 요약된 내용으로 교체
+        "overall_summary": overall_summary, # 종합 평가 추가
         "blog_results_df": pd.DataFrame(blog_results_list) if blog_results_list else pd.DataFrame(),
         "blog_judgments": blog_judgments_list,
         "url_markdown": f"### 분석된 블로그 URL ({len(valid_blogs_data)}개)\n" + "\n".join([f"- [{b['title']}]({b['link']})" for b in valid_blogs_data]),
-        "trend_graph": trend_graph_path,
-        "focused_trend_graph": focused_trend_graph_path,
+        "trend_graph": trend_graph_url,
+        "focused_trend_graph": focused_trend_graph_url,
         "trend_df": trend_df,
         "focused_trend_df": focused_trend_df,
+        "addr1": addr1,
+        "addr2": addr2,
+        "areaCode": areaCode,
         "event_period": event_period,
         "festival_start_date": start_date,
         "festival_end_date": end_date,
@@ -260,6 +336,9 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
     analyzed_festivals_count = 0
 
     total_festivals = len(festivals_to_analyze)
+    if os.environ.get("LOG_DEBUG") == "true":
+        print(f"[DEBUG][CategoryAnalysis] Initial total_festivals: {total_festivals}")
+
     for i, festival_name in enumerate(festivals_to_analyze):
         def nested_progress_callback(p, desc=""):
             progress(initial_progress + (i + p) / total_festivals / total_steps, desc=f"분석 중: {festival_name} ({i+1}/{total_festivals}) - {desc}")
@@ -270,7 +349,15 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
             print(f"   [{festival_name}] 분석 결과가 없거나 오류 발생.")
             continue
 
-        result['precomputed_negative_summary'] = summarize_negative_feedback(result.get("negative_sentences", []))
+        # 부정 문장 요약 생성
+        negative_sentences_list = result.get("negative_sentences", [])
+        negative_summary = summarize_negative_feedback(negative_sentences_list)
+
+        # 부정 판정은 있지만 요약이 없는 경우 처리
+        if not negative_summary and result.get("total_neg", 0) > 0:
+            negative_summary = f"부정 판정 {result.get('total_neg', 0)}건이 있으나 구체적인 불만 내용을 추출하지 못했습니다. (문장이 너무 짧거나 불명확할 수 있습니다)"
+
+        result['precomputed_negative_summary'] = negative_summary
         festival_full_results.append(result)
 
         # 시즌별 트렌드 점수 집계
@@ -343,6 +430,9 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
 
     final_category_df = pd.DataFrame(category_results)
     final_all_blogs_df = pd.concat(all_blog_posts_list, ignore_index=True) if all_blog_posts_list else pd.DataFrame()
+
+    if os.environ.get("LOG_DEBUG") == "true":
+        print(f"[DEBUG][CategoryAnalysis] Final total_festivals: {total_festivals}, analyzed_festivals_count: {analyzed_festivals_count}")
 
     return {
         "status": f"총 {total_festivals}개 축제 요청 중 {len(category_results)}개 분석 완료.",

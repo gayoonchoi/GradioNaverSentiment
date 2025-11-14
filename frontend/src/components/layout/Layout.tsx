@@ -1,5 +1,5 @@
 import { Outlet, Link } from 'react-router-dom'
-import { FaChartBar, FaHome, FaSearch } from 'react-icons/fa'
+import { FaChartBar, FaHome, FaSearch, FaCloudSun } from 'react-icons/fa'
 
 export default function Layout() {
   return (
@@ -32,6 +32,13 @@ export default function Layout() {
               >
                 <FaSearch />
                 <span className="hidden sm:inline">검색</span>
+              </Link>
+              <Link
+                to="/seasonal"
+                className="flex items-center space-x-1 text-gray-700 hover:text-primary transition"
+              >
+                <FaCloudSun />
+                <span className="hidden sm:inline">계절별</span>
               </Link>
               <Link
                 to="/comparison"

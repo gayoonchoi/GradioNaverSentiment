@@ -35,6 +35,12 @@ export interface BlogResult {
   '부정 비율 (%)': string;
   '긍/부정 문장 요약': string;
   '평균 만족도'?: string;
+  judgments: {
+    sentence: string;
+    final_verdict: string;
+    score: number;
+    satisfaction_level: number;
+  }[];
 }
 
 export interface KeywordAnalysisResponse {
@@ -49,9 +55,28 @@ export interface KeywordAnalysisResponse {
   outliers: number[];
   seasonal_data: SeasonalData;
   blog_results: BlogResult[];
-  negative_summary: string[];
+  negative_summary: string;
+  overall_summary: string;
   trend_metrics: TrendMetrics;
   url_markdown: string;
+  focused_trend_graph?: string;
+  trend_graph?: string;
+  seasonal_word_clouds?: {
+    봄?: { positive?: string; negative?: string };
+    여름?: { positive?: string; negative?: string };
+    가을?: { positive?: string; negative?: string };
+    겨울?: { positive?: string; negative?: string };
+  };
+  // 상세 정보 테이블용 데이터
+  addr1: string;
+  addr2: string;
+  areaCode: string | number;
+  eventStartDate: string;
+  eventEndDate: string;
+  eventPeriod: number | string;
+  sentiment_score: number;
+  satisfaction_delta: number;
+  emotion_keyword_freq: any;
 }
 
 export interface CategoryAnalysisResponse {

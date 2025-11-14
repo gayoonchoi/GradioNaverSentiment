@@ -30,7 +30,7 @@ export default function OutlierChart({ scores }: OutlierChartProps) {
   const median = sortedScores[Math.floor(sortedScores.length / 2)]
 
   // 데이터 포인트 생성
-  const data = scores.map((score, index) => ({
+  const data = scores.map((score, _index) => ({
     x: 0,
     y: score,
     isOutlier: score < lowerBound || score > upperBound,

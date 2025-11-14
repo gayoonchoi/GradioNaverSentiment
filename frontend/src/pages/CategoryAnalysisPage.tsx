@@ -1,8 +1,8 @@
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { analyzeCategory } from '../lib/api'
 import DonutChart from '../components/charts/DonutChart'
-import ReactMarkdown from 'react-markdown'
+
 import { FaSpinner, FaCheckCircle } from 'react-icons/fa'
 
 export default function CategoryAnalysisPage() {
@@ -11,6 +11,7 @@ export default function CategoryAnalysisPage() {
   const cat2 = searchParams.get('cat2') || ''
   const cat3 = searchParams.get('cat3') || ''
   const numReviews = Number(searchParams.get('reviews')) || 10
+  const navigate = useNavigate()
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['category-analysis', cat1, cat2, cat3, numReviews],
@@ -98,7 +99,8 @@ export default function CategoryAnalysisPage() {
             {data.individual_results.map((festival: any, index: number) => (
               <div
                 key={index}
-                className="border border-gray-200 rounded-lg p-6 hover:shadow-lg transition"
+                className="border border-gray-200 rounded-lg p-6 hover:shadow-lg transition cursor-pointer"
+                onClick={() => navigate(`/analysis/${festival['축제명']}?reviews=${numReviews}`)}
               >
                 <div className="flex justify-between items-start mb-4">
                   <div>

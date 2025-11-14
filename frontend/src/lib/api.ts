@@ -88,4 +88,46 @@ export const analyzeComparison = async (
   return data;
 };
 
+// 계절별 트렌드 API
+export interface SeasonalTrendResponse {
+  status: string;
+  season: string;
+  wordcloud_url: string;
+  timeline_url: string;
+  top_festivals: {
+    순위: number;
+    축제명: string;
+    '최대 검색량': number;
+    '평균 검색량': number;
+    '행사 시작일': string;
+    '행사 종료일': string;
+  }[];
+  festival_names: string[];
+}
+
+export interface FestivalTrendResponse {
+  status: string;
+  festival_name: string;
+  trend_graph_url: string;
+}
+
+export const getSeasonalTrends = async (
+  season: string
+): Promise<SeasonalTrendResponse> => {
+  const { data } = await api.get('/seasonal/analyze', {
+    params: { season },
+  });
+  return data;
+};
+
+export const getFestivalTrend = async (
+  festivalName: string,
+  season?: string
+): Promise<FestivalTrendResponse> => {
+  const { data } = await api.get('/seasonal/festival-trend', {
+    params: { festival_name: festivalName, season },
+  });
+  return data;
+};
+
 export default api;

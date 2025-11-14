@@ -28,13 +28,13 @@ export default function SeasonalTabs({
   seasonalData,
   seasonalWordClouds = {},
 }: SeasonalTabsProps) {
-  const [activeSeason, setActiveSeason] = useState<string>('봄')
-
   const seasons = Object.keys(SEASON_CONFIG) as Array<keyof typeof SEASON_CONFIG>
   const availableSeasons = seasons.filter((season) => {
     const data = seasonalData[season]
     return data && (data.pos > 0 || data.neg > 0)
   })
+  
+  const [activeSeason, setActiveSeason] = useState<string>(availableSeasons[0] || '봄')
 
   if (availableSeasons.length === 0) {
     return (
@@ -94,9 +94,10 @@ export default function SeasonalTabs({
             <div className="text-3xl font-bold text-blue-600">
               {currentData
                 ? (
-                    (currentData.pos / (currentData.pos + currentData.neg)) *
-                    100
-                  ).toFixed(1)
+                    ((currentData.pos + currentData.neg > 0
+                      ? currentData.pos / (currentData.pos + currentData.neg)
+                      : 0) * 100
+                  ).toFixed(1))
                 : 0}
               %
             </div>

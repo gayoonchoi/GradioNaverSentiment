@@ -158,29 +158,33 @@ class SimpleScorer:
         elif is_negative_context:
             final_score = -0.3
 
+        # 문장에서 **강조**된 구문과 (수식어구: 대상) 패턴을 찾습니다.
+        # 이 패턴은 LLM이 감성 표현을 마킹할 때 사용합니다.
         marked_phrases_with_modifiers = re.findall(
             r"\*\*\*\*([^*]+?)\*\*\*\*(?:\(수식어구:\s*([^)]+?)\))?", sentence
         )
 
         positive_contribution = 0.0
         negative_contribution = 0.0
-        modified_word_scores = {}
+        modified_word_scores = {} # 수식어의 영향을 받는 단어들의 점수를 저장
 
         def get_contextual_score(scores: list, is_pos, is_neg):
+            """문맥에 맞는 점수를 리스트에서 찾아 반환"""
             if is_pos:
-                # 긍정 점수 중 가장 큰 값을 선택 (여러 개일 경우)
                 pos_scores = [s for s in scores if s > 0]
                 if pos_scores: return max(pos_scores), True
             elif is_neg:
-                # 부정 점수 중 가장 작은 값을 선택
                 neg_scores = [s for s in scores if s < 0]
                 if neg_scores: return min(neg_scores), True
             return None, False
 
+        # 1단계: 마킹된 구문 및 문장 내 모든 단어에 대한 감성 점수 계산
+        # 마킹된 구문 처리 (LLM이 명시적으로 감성 표현이라고 판단한 부분)
         for phrase, modifier_target in marked_phrases_with_modifiers:
             phrase = phrase.strip()
             modifier_target = modifier_target.strip() if modifier_target else None
 
+            # 강조어, 완화어, 부정어는 2단계에서 처리하므로 여기서는 건너뜀
             if (
                 phrase in self.kb.amplifiers
                 or phrase in self.kb.downtoners
@@ -189,6 +193,7 @@ class SimpleScorer:
                 continue
 
             current_phrase_score = 0.0
+            # 관용어 처리
             if phrase in self.kb.idioms:
                 scores = self.kb.idioms[phrase]
                 score, found = get_contextual_score(
@@ -196,11 +201,11 @@ class SimpleScorer:
                 )
                 if found:
                     current_phrase_score = score
-                else:
+                else: # 사전에 있지만 문맥에 맞는 점수가 없으면 동적 추론
                     current_phrase_score = self.get_dynamic_score(
                         phrase, "Idiom", is_positive_context, is_negative_context
                     )
-            else:
+            else: # 일반 단어 처리 (형태소 분석)
                 words_in_phrase = self.okt.pos(phrase, norm=True, stem=True)
                 for word, tag in words_in_phrase:
                     word_score = 0.0
@@ -222,10 +227,11 @@ class SimpleScorer:
                         )
                         if found:
                             word_score = score
-                        else:
+                        else: # 사전에 있지만 문맥에 맞는 점수가 없으면 동적 추론
                             word_score = self.get_dynamic_score(
                                 word, tag, is_positive_context, is_negative_context
                             )
+                    # 사전에 없는 감성 관련 품사 단어는 동적 추론
                     elif not self.kb.is_known_word(word) and (tag.startswith("Adjective") or tag.startswith("Adverb") or tag.startswith("Noun")):
                         word_score = self.get_dynamic_score(
                             word, tag, is_positive_context, is_negative_context
@@ -240,13 +246,14 @@ class SimpleScorer:
                 elif current_phrase_score < 0:
                     negative_contribution += current_phrase_score
 
+        # 2단계: 수식어(강조어, 완화어, 부정어) 적용
         for phrase, modifier_target in marked_phrases_with_modifiers:
             phrase = phrase.strip()
             modifier_target = modifier_target.strip() if modifier_target else None
 
             def get_multiplier(dictionary, p):
                 if p in dictionary:
-                    return dictionary[p][0]
+                    return dictionary[p][0] # 첫 번째 배율 값 사용
                 return 1.0
 
             if phrase in self.kb.amplifiers:
@@ -259,8 +266,9 @@ class SimpleScorer:
                     modified_word_scores[modifier_target] *= multiplier
             elif phrase in self.kb.negators:
                 if modifier_target and modifier_target in modified_word_scores:
-                    modified_word_scores[modifier_target] *= -1
+                    modified_word_scores[modifier_target] *= -1 # 부정어는 점수 부호 반전
 
+        # 3단계: 수식어 적용된 점수들을 최종 점수에 합산
         for target, score in modified_word_scores.items():
             if score > 0:
                 positive_contribution += score
@@ -270,7 +278,7 @@ class SimpleScorer:
         final_score += positive_contribution
         final_score += negative_contribution
 
-        # 점수가 0일 때 기본 뉘앙스 점수 유지
+        # 점수가 0일 때 기본 뉘앙스 점수 유지 (중립 문맥이 아닌 경우)
         if final_score == 0.0:
             if is_positive_context:
                 return 0.3

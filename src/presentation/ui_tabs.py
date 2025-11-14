@@ -3,6 +3,7 @@ import gradio as gr
 from ..data import festival_loader
 from .ui_components import create_keyword_analysis_outputs, create_category_analysis_outputs
 from .event_handlers import update_cat2_choices, update_cat3_choices, update_festival_choices
+from .seasonal_tab import build_seasonal_trend_tab  # 새로운 계절별 탭
 from ..application.analysis_service import (
     analyze_keyword_and_generate_report,
     run_comparison_analysis,

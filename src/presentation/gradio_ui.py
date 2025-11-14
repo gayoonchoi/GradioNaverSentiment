@@ -6,7 +6,8 @@ from .ui_tabs import (
     build_keyword_comparison_tab,
     build_category_analysis_tab,
     build_category_comparison_tab,
-    build_custom_group_analysis_tab
+    build_custom_group_analysis_tab,
+    build_seasonal_trend_tab  # 새로운 계절별 탭
 )
 
 def create_ui():
@@ -21,5 +22,6 @@ def create_ui():
             build_category_analysis_tab()
             build_category_comparison_tab()
             build_custom_group_analysis_tab()
+            build_seasonal_trend_tab()  # 계절별 인기 축제 탐색 탭 추가
 
     return demo

@@ -83,15 +83,15 @@ export default function SearchPage() {
             </label>
             <input
               type="range"
-              min="5"
-              max="50"
+              min="1"
+              max="20"
               value={numReviews}
               onChange={(e) => setNumReviews(Number(e.target.value))}
               className="w-full"
             />
             <div className="flex justify-between text-xs text-gray-500">
-              <span>5개 (빠름)</span>
-              <span>50개 (정밀)</span>
+              <span>1개 (빠름)</span>
+              <span>20개 (정밀)</span>
             </div>
           </div>
           <button

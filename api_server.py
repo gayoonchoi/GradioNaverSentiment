@@ -1,8 +1,8 @@
-# GradioNaverSentiment FastAPI Backend Server
 import os
 import sys
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import uvicorn
@@ -10,6 +10,9 @@ import traceback
 
 # 프로젝트 경로 추가
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# temp_images 디렉토리 생성
+os.makedirs("temp_images", exist_ok=True)
 
 # 환경 설정
 from src.config import setup_environment
@@ -21,13 +24,14 @@ from src.application.analysis_logic import (
     perform_category_analysis
 )
 from src.data.festival_loader import (
-    load_festival_data,
     get_cat1_choices,
     get_cat2_choices,
     get_cat3_choices,
     get_festivals
 )
 from src.application.utils import create_driver
+from src.application import seasonal_analysis
+from src.infrastructure.reporting import seasonal_wordcloud
 
 # FastAPI 앱 생성
 app = FastAPI(
@@ -35,6 +39,9 @@ app = FastAPI(
     description="Festival sentiment analysis API for festival planners",
     version="2.0.0"
 )
+
+# 이미지 파일 서빙
+app.mount("/images", StaticFiles(directory="temp_images"), name="images")
 
 # CORS 설정 (React 프론트엔드와 통신)
 app.add_middleware(
@@ -103,8 +110,7 @@ async def root():
 async def get_categories():
     """카테고리 1단계 목록 반환"""
     try:
-        festival_data = load_festival_data()
-        return {"categories": get_cat1_choices(festival_data)}
+        return {"categories": get_cat1_choices()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -112,8 +118,7 @@ async def get_categories():
 async def get_medium_categories(cat1: str):
     """카테고리 2단계 목록 반환"""
     try:
-        festival_data = load_festival_data()
-        return {"categories": get_cat2_choices(festival_data, cat1)}
+        return {"categories": get_cat2_choices(cat1)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -121,8 +126,7 @@ async def get_medium_categories(cat1: str):
 async def get_small_categories(cat1: str, cat2: str):
     """카테고리 3단계 목록 반환"""
     try:
-        festival_data = load_festival_data()
-        return {"categories": get_cat3_choices(festival_data, cat1, cat2)}
+        return {"categories": get_cat3_choices(cat1, cat2)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -130,8 +134,7 @@ async def get_small_categories(cat1: str, cat2: str):
 async def get_festival_list(cat1: str, cat2: str, cat3: str):
     """선택한 카테고리의 축제 목록 반환"""
     try:
-        festival_data = load_festival_data()
-        festivals = get_festivals(festival_data, cat1, cat2, cat3)
+        festivals = get_festivals(cat1, cat2, cat3)
         return {"festivals": festivals}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -190,9 +193,23 @@ async def analyze_keyword(request: KeywordAnalysisRequest):
             "outliers": results.get("outliers", []),
             "seasonal_data": results.get("seasonal_data", {}),
             "blog_results": results.get("blog_results_df", {}).to_dict('records') if hasattr(results.get("blog_results_df"), 'to_dict') else [],
-            "negative_summary": results.get("negative_sentences", []),
+            "negative_summary": results.get("negative_summary", ""),
+            "overall_summary": results.get("overall_summary", ""),
             "trend_metrics": results.get("trend_metrics", {}),
             "url_markdown": results.get("url_markdown", ""),
+            "trend_graph": results.get("trend_graph"),
+            "focused_trend_graph": results.get("focused_trend_graph"),
+            "seasonal_word_clouds": results.get("seasonal_word_clouds"),
+            # 상세 정보 테이블용 데이터 추가
+            "addr1": results.get("addr1", "N/A"),
+            "addr2": results.get("addr2", "N/A"),
+            "areaCode": results.get("areaCode", "N/A"),
+            "eventStartDate": results.get("festival_start_date").strftime('%Y-%m-%d') if results.get("festival_start_date") else "N/A",
+            "eventEndDate": results.get("festival_end_date").strftime('%Y-%m-%d') if results.get("festival_end_date") else "N/A",
+            "eventPeriod": results.get("event_period", "N/A"),
+            "sentiment_score": results.get("total_sentiment_score", 0),
+            "satisfaction_delta": results.get("satisfaction_delta", 0),
+            "emotion_keyword_freq": results.get("emotion_keyword_freq", {})
         }
 
         print(f"[OK] 분석 완료: {request.keyword}")
@@ -326,6 +343,97 @@ async def analyze_comparison(request: ComparisonRequest):
         print(f"[ERROR] 비교 분석 중 오류: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
+
+@app.get("/api/seasonal/analyze")
+async def analyze_seasonal_trends(season: str = Query(..., description="Season: 봄, 여름, 가을, 겨울")):
+    """
+    계절별 인기 축제 트렌드 분석
+
+    Returns:
+        - season: 선택한 계절
+        - wordcloud_url: 워드클라우드 이미지 URL
+        - timeline_url: 타임라인 그래프 이미지 URL
+        - top_festivals: 상위 10개 축제 테이블 데이터
+        - festival_names: 드롭다운용 축제명 리스트
+    """
+    try:
+        print(f"📊 계절별 트렌드 분석 시작: {season}")
+
+        # 1. 워드클라우드용 축제 빈도 데이터 (상위 120개)
+        freq_dict = seasonal_analysis.get_festival_frequency_dict(season, top_n=120)
+
+        # 2. 워드클라우드 이미지 생성
+        wordcloud_path = seasonal_wordcloud.create_wordcloud_for_gradio(freq_dict, season)
+        wordcloud_url = f"/images/{os.path.basename(wordcloud_path)}"
+
+        # 3. 타임라인 그래프 생성
+        timeline_path = seasonal_analysis.create_timeline_graph(season, top_n=10)
+        timeline_url = f"/images/{os.path.basename(timeline_path)}"
+
+        # 4. 테이블 데이터
+        table_df = seasonal_analysis.get_table_data(season, top_n=10)
+
+        # 5. 드롭다운용 축제명 리스트
+        festival_names = seasonal_analysis.get_festival_names_for_season(season, top_n=10)
+
+        response = {
+            "status": "분석 완료",
+            "season": season,
+            "wordcloud_url": wordcloud_url,
+            "timeline_url": timeline_url,
+            "top_festivals": table_df.to_dict('records'),
+            "festival_names": festival_names
+        }
+
+        print(f"[OK] 계절별 트렌드 분석 완료: {season}")
+        return response
+
+    except FileNotFoundError as e:
+        print(f"[ERROR] 데이터 파일 없음: {e}")
+        raise HTTPException(
+            status_code=404,
+            detail="트렌드 데이터를 찾을 수 없습니다. scripts/collect_sample_100.py를 먼저 실행해주세요."
+        )
+    except Exception as e:
+        print(f"[ERROR] 계절별 분석 중 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
+
+@app.get("/api/seasonal/festival-trend")
+async def get_festival_trend(
+    festival_name: str = Query(..., description="Festival name"),
+    season: str = Query(None, description="Season (optional, for color selection)")
+):
+    """
+    개별 축제의 검색 트렌드 그래프 조회
+
+    Returns:
+        - festival_name: 축제명
+        - trend_graph_url: 트렌드 그래프 이미지 URL
+    """
+    try:
+        print(f"📊 축제 트렌드 조회: {festival_name}")
+
+        # 개별 축제 트렌드 그래프 생성
+        trend_path = seasonal_analysis.create_individual_festival_trend_graph(festival_name, season)
+        trend_url = f"/images/{os.path.basename(trend_path)}"
+
+        response = {
+            "status": "조회 완료",
+            "festival_name": festival_name,
+            "trend_graph_url": trend_url
+        }
+
+        print(f"[OK] 축제 트렌드 조회 완료: {festival_name}")
+        return response
+
+    except ValueError as e:
+        print(f"[ERROR] 축제 찾기 실패: {e}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR] 트렌드 조회 중 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"조회 중 오류 발생: {str(e)}")
 
 # 서버 실행
 if __name__ == "__main__":

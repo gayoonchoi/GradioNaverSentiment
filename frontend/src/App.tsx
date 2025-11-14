@@ -5,6 +5,7 @@ import SearchPage from './pages/SearchPage'
 import AnalysisPage from './pages/AnalysisPage'
 import CategoryAnalysisPage from './pages/CategoryAnalysisPage'
 import ComparisonPage from './pages/ComparisonPage'
+import SeasonalTrendPage from './pages/SeasonalTrendPage'
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
         <Route path="analysis/:keyword" element={<AnalysisPage />} />
         <Route path="analysis/category" element={<CategoryAnalysisPage />} />
         <Route path="comparison" element={<ComparisonPage />} />
+        <Route path="seasonal" element={<SeasonalTrendPage />} />
       </Route>
     </Routes>
   )
