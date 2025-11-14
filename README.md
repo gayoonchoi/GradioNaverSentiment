@@ -1,4 +1,4 @@
-# 🚀 LLM 우선 네이버 블로그 감성 분석기 (GradioNaverSentiment)
+# 🚀 LLM 네이버 블로그 감성 분석기 (GradioNaverSentiment)
 
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue?style=flat-square&logo=python)
 ![Gradio](https://img.shields.io/badge/Gradio-4.0%2B-orange?style=flat-square&logo=gradio)
