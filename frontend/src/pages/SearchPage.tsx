@@ -14,29 +14,6 @@ export default function SearchPage() {
   const [numReviews, setNumReviews] = useState<number>(10)
   const [numReviewsCategory, setNumReviewsCategory] = useState<number>(10)
 
-  // URL 파라미터에서 키워드 또는 카테고리 자동 입력
-  useEffect(() => {
-    const urlKeyword = searchParams.get('keyword')
-    const urlCat1 = searchParams.get('cat1')
-    const urlCat2 = searchParams.get('cat2')
-    const urlCat3 = searchParams.get('cat3')
-
-    if (urlKeyword) {
-      setKeyword(decodeURIComponent(urlKeyword))
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    }
-
-    if (urlCat1) {
-      setSelectedCat1(decodeURIComponent(urlCat1))
-    }
-    if (urlCat2) {
-      setSelectedCat2(decodeURIComponent(urlCat2))
-    }
-    if (urlCat3) {
-      setSelectedCat3(decodeURIComponent(urlCat3))
-    }
-  }, [searchParams])
-
   // 카테고리 데이터 fetch
   const { data: cat1Options = [] } = useQuery({
     queryKey: ['categories'],
@@ -54,6 +31,26 @@ export default function SearchPage() {
     queryFn: () => getSmallCategories(selectedCat1, selectedCat2),
     enabled: !!selectedCat1 && !!selectedCat2,
   })
+
+  // URL 파라미터에서 키워드 또는 카테고리 자동 입력
+  useEffect(() => {
+    const urlKeyword = searchParams.get('keyword');
+    const urlCat1 = searchParams.get('cat1');
+    const urlCat2 = searchParams.get('cat2');
+    const urlCat3 = searchParams.get('cat3');
+
+    if (urlKeyword) {
+      setKeyword(decodeURIComponent(urlKeyword));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // URL 파라미터에 따라 상태를 설정하고, 없으면 초기화합니다.
+    // React의 제어 컴포넌트와 비동기 쿼리(useQuery)의 특성상,
+    // 상태를 먼저 설정해두면, 나중에 옵션이 로드되었을 때 React가 올바른 값을 선택합니다.
+    setSelectedCat1(urlCat1 ? decodeURIComponent(urlCat1) : '');
+    setSelectedCat2(urlCat2 ? decodeURIComponent(urlCat2) : '');
+    setSelectedCat3(urlCat3 ? decodeURIComponent(urlCat3) : '');
+  }, [searchParams]);
 
   const handleDirectSearch = () => {
     if (!keyword.trim()) {

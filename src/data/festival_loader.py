@@ -19,6 +19,16 @@ CATEGORY_FILES = [
 ]
 
 
+def strip_nested_keys(d):
+    """딕셔너리의 모든 키에서 재귀적으로 공백을 제거합니다."""
+    if isinstance(d, dict):
+        return {key.strip(): strip_nested_keys(value) for key, value in d.items()}
+    elif isinstance(d, list):
+        # 리스트 내의 각 항목에 대해 재귀적으로 함수를 적용합니다 (필요한 경우).
+        return [strip_nested_keys(item) for item in d]
+    return d
+
+
 @lru_cache(maxsize=1)
 def load_festival_data():
     """각 파일이 대분류를 최상위 키로 갖는 구조에 맞춰 데이터를 로드하고 합칩니다."""
@@ -28,8 +38,9 @@ def load_festival_data():
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 data_from_file = json.load(f)
-                # 각 파일의 딕셔너리를 바로 합칩니다.
-                combined_data.update(data_from_file)
+                # JSON 키의 모든 공백을 재귀적으로 제거합니다.
+                stripped_data = strip_nested_keys(data_from_file)
+                combined_data.update(stripped_data)
         except FileNotFoundError:
             print(f"Warning: Festival JSON file not found at {file_path}")
             continue
@@ -50,7 +61,8 @@ def get_cat2_choices(cat1: str):
     if not cat1:
         return []
     data = load_festival_data()
-    return list(data.get(cat1, {}).keys())
+    # 입력값에서도 공백을 제거하여 일관성을 유지합니다.
+    return list(data.get(cat1.strip(), {}).keys())
 
 
 def get_cat3_choices(cat1: str, cat2: str):
@@ -58,7 +70,8 @@ def get_cat3_choices(cat1: str, cat2: str):
     if not cat1 or not cat2:
         return []
     data = load_festival_data()
-    return list(data.get(cat1, {}).get(cat2, {}).keys())
+    # 입력값에서도 공백을 제거하여 일관성을 유지합니다.
+    return list(data.get(cat1.strip(), {}).get(cat2.strip(), {}).keys())
 
 
 def get_festivals(cat1: str, cat2: str = None, cat3: str = None) -> list:

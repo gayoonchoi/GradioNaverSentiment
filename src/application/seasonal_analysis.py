@@ -56,9 +56,9 @@ def get_festival_categories(festival_name: str):
 
         if result:
             return {
-                "cat1": result[0] or "",
-                "cat2": result[1] or "",
-                "cat3": result[2] or ""
+                "cat1": result[0].strip() if result[0] else "",
+                "cat2": result[1].strip() if result[1] else "",
+                "cat3": result[2].strip() if result[2] else ""
             }
         return None
     except Exception as e:
