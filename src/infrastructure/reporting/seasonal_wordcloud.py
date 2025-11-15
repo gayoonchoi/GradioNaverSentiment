@@ -6,6 +6,8 @@ Tour_Trend_WordCloud의 로직을 기반으로 계절별 인기 축제를
 """
 
 import os
+import matplotlib
+matplotlib.use('Agg')  # GUI 없는 백엔드 사용 (FastAPI 비동기 환경 호환)
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from wordcloud import WordCloud
@@ -26,7 +28,7 @@ SEASON_COLORS = {
 }
 
 # 마스크 이미지 경로 (선택적)
-MASK_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "assets", "masks")
+MASK_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "assets")
 
 
 def blended_color_func(palette):

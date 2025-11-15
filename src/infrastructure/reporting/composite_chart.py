@@ -1,4 +1,6 @@
 
+import matplotlib
+matplotlib.use('Agg')  # GUI 없는 백엔드 사용 (FastAPI 비동기 환경 호환)
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 import math

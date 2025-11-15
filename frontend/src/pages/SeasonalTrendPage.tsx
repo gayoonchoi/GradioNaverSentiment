@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { getSeasonalTrends, getFestivalTrend } from '../lib/api'
-import { FaCloudSun, FaSun, FaLeaf, FaSnowflake } from 'react-icons/fa'
+import { FaCloudSun, FaSun, FaLeaf, FaSnowflake, FaSearch, FaLayerGroup } from 'react-icons/fa'
 
 type Season = '봄' | '여름' | '가을' | '겨울'
 
@@ -13,6 +14,7 @@ const SEASONS: { value: Season; label: string; icon: JSX.Element; color: string 
 ]
 
 export default function SeasonalTrendPage() {
+  const navigate = useNavigate()
   const [selectedSeason, setSelectedSeason] = useState<Season>('봄')
   const [selectedFestival, setSelectedFestival] = useState<string>('')
 
@@ -135,6 +137,9 @@ export default function SeasonalTrendPage() {
           {/* Table */}
           <div className="bg-white rounded-xl shadow-md p-6">
             <h2 className="text-2xl font-bold mb-4">상세 정보 테이블</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              💡 <strong>Tip:</strong> 축제명을 클릭하여 상세 분석 페이지로 바로 이동하세요!
+            </p>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -154,28 +159,54 @@ export default function SeasonalTrendPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       행사 기간
                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      분석
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {seasonalData.top_festivals.map((festival) => (
-                    <tr key={festival.순위} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {festival.순위}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {festival.축제명}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {festival['최대 검색량'].toFixed(1)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {festival['평균 검색량'].toFixed(1)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {festival['행사 시작일']} ~ {festival['행사 종료일']}
-                      </td>
-                    </tr>
-                  ))}
+                  {seasonalData.top_festivals.map((festival) => {
+                    // 카테고리 정보를 포함한 URL 생성
+                    const searchUrl = `/search?keyword=${encodeURIComponent(festival.축제명)}${
+                      festival.cat1 ? `&cat1=${encodeURIComponent(festival.cat1)}` : ''
+                    }${festival.cat2 ? `&cat2=${encodeURIComponent(festival.cat2)}` : ''}${
+                      festival.cat3 ? `&cat3=${encodeURIComponent(festival.cat3)}` : ''
+                    }`
+
+                    return (
+                      <tr key={festival.순위} className="hover:bg-gray-50 transition">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {festival.순위}
+                        </td>
+                        <td
+                          className="px-6 py-4 whitespace-nowrap text-sm text-blue-600 font-semibold cursor-pointer hover:text-blue-800 hover:underline"
+                          onClick={() => navigate(searchUrl)}
+                          title="클릭하여 검색 페이지로 이동"
+                        >
+                          {festival.축제명}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {festival['최대 검색량'].toFixed(1)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {festival['평균 검색량'].toFixed(1)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {festival['행사 시작일']} ~ {festival['행사 종료일']}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <button
+                            onClick={() => navigate(searchUrl)}
+                            className="inline-flex items-center px-3 py-1.5 bg-blue-500 text-white text-xs font-medium rounded-md hover:bg-blue-600 transition"
+                            title="검색 페이지로 이동 (후기 개수 선택 가능)"
+                          >
+                            <FaSearch className="mr-1" />
+                            상세 분석
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -228,13 +259,29 @@ export default function SeasonalTrendPage() {
                   />
                 </div>
                 <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-gray-700">
+                  <p className="text-sm text-gray-700 mb-3">
                     💡 <strong>더 자세한 분석이 필요하신가요?</strong>
                     <br />
-                    &quot;직접 검색&quot; 메뉴에서 &quot;{festivalData.festival_name}&quot;를
-                    검색하여 블로그 감성 분석, 워드클라우드, LLM 요약 등 모든 기능을
-                    활용하세요!
+                    블로그 감성 분석, 워드클라우드, LLM 요약 등 모든 기능을 활용하세요!
                   </p>
+                  <button
+                    onClick={() => {
+                      // 선택된 축제의 카테고리 정보 찾기
+                      const festivalInfo = seasonalData.top_festivals.find(
+                        (f) => f.축제명 === festivalData.festival_name
+                      )
+                      const categoryParams = festivalInfo
+                        ? `${festivalInfo.cat1 ? `&cat1=${encodeURIComponent(festivalInfo.cat1)}` : ''}${
+                            festivalInfo.cat2 ? `&cat2=${encodeURIComponent(festivalInfo.cat2)}` : ''
+                          }${festivalInfo.cat3 ? `&cat3=${encodeURIComponent(festivalInfo.cat3)}` : ''}`
+                        : ''
+                      navigate(`/search?keyword=${encodeURIComponent(festivalData.festival_name)}${categoryParams}`)
+                    }}
+                    className="w-full inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition"
+                  >
+                    <FaSearch className="mr-2" />
+                    &quot;{festivalData.festival_name}&quot; 상세 분석 시작
+                  </button>
                 </div>
               </div>
             )}

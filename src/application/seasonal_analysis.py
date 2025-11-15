@@ -7,16 +7,20 @@ festival_trends_summary.csv를 기반으로 계절별 인기 축제를 분석하
 
 import os
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # GUI 없는 백엔드 사용 (FastAPI 비동기 환경 호환)
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib import font_manager
 import datetime
 import io
+import sqlite3
 
 # 프로젝트 루트
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SUMMARY_CSV_PATH = os.path.join(PROJECT_ROOT, "database", "festival_trends_summary.csv")
 FONT_PATH = r"C:\Windows\Fonts\malgun.ttf"
+DB_PATH = os.path.join(PROJECT_ROOT, "database", "tour_data.db")
 
 # 계절별 색상
 SEASON_COLORS = {
@@ -25,6 +29,41 @@ SEASON_COLORS = {
     "가을": ["#0C0C0C", "#63372C", "#481E14", "#9B3922", "#F2613F"],
     "겨울": ["#000000", "#0B60B0", "#2081C3", "#40A2D8", "#F0EDCF"]
 }
+
+
+def get_festival_categories(festival_name: str):
+    """
+    축제 이름으로 데이터베이스에서 카테고리 정보 조회
+
+    Args:
+        festival_name: 축제명
+
+    Returns:
+        dict: {cat1, cat2, cat3} 또는 None
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        # 축제 이름으로 카테고리 조회
+        cursor.execute(
+            "SELECT cat1, cat2, cat3 FROM festivals WHERE title = ?",
+            (festival_name,)
+        )
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            return {
+                "cat1": result[0] or "",
+                "cat2": result[1] or "",
+                "cat3": result[2] or ""
+            }
+        return None
+    except Exception as e:
+        print(f"[WARN] 카테고리 조회 실패 ({festival_name}): {e}")
+        return None
 
 
 def load_seasonal_data(season: str = None):
@@ -101,6 +140,10 @@ def create_timeline_graph(season: str, top_n: int = 10) -> str:
     if df.empty:
         raise ValueError(f"{season} 시즌 데이터가 없습니다.")
 
+    # 한글 폰트 설정 (그래프 생성 전에 먼저 설정)
+    plt.rcParams['font.family'] = font_manager.FontProperties(fname=FONT_PATH).get_name()
+    plt.rcParams['axes.unicode_minus'] = False
+
     # 날짜 변환
     df['event_start_date'] = pd.to_datetime(df['event_start_date'])
     df['event_end_date'] = pd.to_datetime(df['event_end_date'])
@@ -142,9 +185,10 @@ def create_timeline_graph(season: str, top_n: int = 10) -> str:
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
     ax.grid(axis='x', linestyle='--', alpha=0.4)
 
-    # 한글 폰트 설정
-    plt.rcParams['font.family'] = font_manager.FontProperties(fname=FONT_PATH).get_name()
-    plt.rcParams['axes.unicode_minus'] = False
+    # y축 tick labels에 한글 폰트 명시적으로 적용
+    font_prop = font_manager.FontProperties(fname=FONT_PATH)
+    for label in ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
 
     plt.tight_layout()
 
@@ -168,22 +212,36 @@ def get_table_data(season: str, top_n: int = 10):
         top_n: 상위 N개
 
     Returns:
-        pd.DataFrame: 테이블 데이터 (순위, 축제명, 검색량, 평균검색량, 행사기간)
+        pd.DataFrame: 테이블 데이터 (순위, 축제명, 검색량, 평균검색량, 행사기간, 카테고리)
     """
     df = get_top_festivals(season, top_n)
 
     if df.empty:
-        return pd.DataFrame(columns=["순위", "축제명", "최대 검색량", "평균 검색량", "행사 시작일", "행사 종료일"])
+        return pd.DataFrame(columns=["순위", "축제명", "최대 검색량", "평균 검색량", "행사 시작일", "행사 종료일", "cat1", "cat2", "cat3"])
 
     df = df.reset_index(drop=True)
     df['순위'] = df.index + 1
 
+    # 각 축제의 카테고리 정보 조회
+    categories = []
+    for festival_name in df['festival_name']:
+        cat_info = get_festival_categories(festival_name)
+        if cat_info:
+            categories.append(cat_info)
+        else:
+            categories.append({"cat1": "", "cat2": "", "cat3": ""})
+
+    # 카테고리 정보를 DataFrame에 추가
+    df['cat1'] = [c['cat1'] for c in categories]
+    df['cat2'] = [c['cat2'] for c in categories]
+    df['cat3'] = [c['cat3'] for c in categories]
+
     table_df = df[[
         '순위', 'festival_name', 'max_ratio', 'mean_ratio',
-        'event_start_date', 'event_end_date'
+        'event_start_date', 'event_end_date', 'cat1', 'cat2', 'cat3'
     ]].copy()
 
-    table_df.columns = ["순위", "축제명", "최대 검색량", "평균 검색량", "행사 시작일", "행사 종료일"]
+    table_df.columns = ["순위", "축제명", "최대 검색량", "평균 검색량", "행사 시작일", "행사 종료일", "cat1", "cat2", "cat3"]
 
     return table_df
 
@@ -242,6 +300,10 @@ def create_individual_festival_trend_graph(festival_name: str, season: str = Non
     if df_trend.empty:
         raise ValueError(f"트렌드 데이터를 가져올 수 없습니다: {festival_name}")
 
+    # 한글 폰트 설정 (그래프 생성 전에 먼저 설정)
+    plt.rcParams['font.family'] = font_manager.FontProperties(fname=FONT_PATH).get_name()
+    plt.rcParams['axes.unicode_minus'] = False
+
     # 그래프 생성
     palette = SEASON_COLORS.get(season, SEASON_COLORS["봄"])
 
@@ -262,10 +324,6 @@ def create_individual_festival_trend_graph(festival_name: str, season: str = Non
                  fontproperties=font_manager.FontProperties(fname=FONT_PATH))
     ax.grid(True, linestyle='--', alpha=0.4)
     ax.legend(prop=font_manager.FontProperties(fname=FONT_PATH))
-
-    # 한글 폰트 설정
-    plt.rcParams['font.family'] = font_manager.FontProperties(fname=FONT_PATH).get_name()
-    plt.rcParams['axes.unicode_minus'] = False
 
     plt.tight_layout()
 

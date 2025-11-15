@@ -16,6 +16,14 @@ from ..infrastructure.reporting.wordclouds import create_sentiment_wordclouds
 from collections import Counter
 from src.domain.knowledge_base import knowledge_base
 
+# 계절 영문 매핑
+SEASON_EN_MAP = {
+    "봄": "spring",
+    "여름": "summer",
+    "가을": "fall",
+    "겨울": "winter"
+}
+
 def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_details: bool, progress: gr.Progress, progress_desc: str):
     # TourAPI에서 축제 기간 가져오기
     start_date_str, end_date_str = get_festival_period(keyword)
@@ -318,7 +326,6 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
 
 # 핵심 분석 로직을 담는 새 함수
 from ..infrastructure.reporting.wordclouds import create_seasonal_trend_wordcloud
-from ..application.result_packager import SEASON_EN_MAP
 
 def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str, num_reviews: int, driver, log_details: bool, progress: gr.Progress, initial_progress: float, total_steps: int):
     if not festivals_to_analyze: return {"error": f"'{group_name}' 그룹에서 분석할 축제를 찾을 수 없습니다."}

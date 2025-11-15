@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { FaExternalLinkAlt, FaChevronLeft, FaChevronRight } from 'react-icons/fa'
 import type { BlogResult } from '../types'
 import ReactMarkdown from 'react-markdown' // Import ReactMarkdown

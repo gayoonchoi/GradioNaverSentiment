@@ -1,21 +1,29 @@
-gradio
+# Web Framework
+fastapi
+uvicorn[standard]
+
+# Data Processing
 pandas
 numpy
+
+# HTTP & Web Scraping
 requests
 beautifulsoup4
-python-dotenv
-konlpy
-# LangGraph and related libraries
-langgraph
-langchain_core
-# Selenium for advanced scraping
 selenium
 webdriver-manager
-# LangChain for LLM calls
+
+# LLM & AI
+langgraph
+langchain_core
 langchain-google-genai
-# For plotting
+
+# Natural Language Processing
+konlpy
+
+# Visualization
 matplotlib
-# For Word document generation
-python-docx
 wordcloud
 Pillow
+
+# Utilities
+python-dotenv
