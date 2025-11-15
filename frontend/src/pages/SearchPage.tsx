@@ -1,56 +1,78 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getCategories, getMediumCategories, getSmallCategories } from '../lib/api'
 import { FaSearch } from 'react-icons/fa'
 
 export default function SearchPage() {
+  console.log('--- SearchPage Component Rendered ---')
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const location = useLocation()
+  const categorySearchRef = useRef<HTMLDivElement>(null)
+
   const [selectedCat1, setSelectedCat1] = useState<string>('')
   const [selectedCat2, setSelectedCat2] = useState<string>('')
   const [selectedCat3, setSelectedCat3] = useState<string>('')
   const [keyword, setKeyword] = useState<string>('')
   const [numReviews, setNumReviews] = useState<number>(10)
   const [numReviewsCategory, setNumReviewsCategory] = useState<number>(10)
+  const [showCategoryHint, setShowCategoryHint] = useState(false)
 
   // 카테고리 데이터 fetch
   const { data: cat1Options = [] } = useQuery({
     queryKey: ['categories'],
     queryFn: getCategories,
   })
+  console.log('cat1Options:', cat1Options)
 
   const { data: cat2Options = [] } = useQuery({
     queryKey: ['categories', 'medium', selectedCat1],
     queryFn: () => getMediumCategories(selectedCat1),
     enabled: !!selectedCat1,
   })
+  console.log(`cat2Options (for ${selectedCat1}):`, cat2Options)
 
   const { data: cat3Options = [] } = useQuery({
     queryKey: ['categories', 'small', selectedCat1, selectedCat2],
     queryFn: () => getSmallCategories(selectedCat1, selectedCat2),
     enabled: !!selectedCat1 && !!selectedCat2,
   })
+  console.log(`cat3Options (for ${selectedCat1} > ${selectedCat2}):`, cat3Options)
 
-  // URL 파라미터에서 키워드 또는 카테고리 자동 입력
+  // 백엔드에서 이제 카테고리 이름을 직접 전달하므로, location.state를 바로 사용합니다.
   useEffect(() => {
-    const urlKeyword = searchParams.get('keyword');
-    const urlCat1 = searchParams.get('cat1');
-    const urlCat2 = searchParams.get('cat2');
-    const urlCat3 = searchParams.get('cat3');
-
-    if (urlKeyword) {
-      setKeyword(decodeURIComponent(urlKeyword));
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+    // 상태가 없으면 아무것도 하지 않음
+    if (!location.state) {
+      return
     }
 
-    // URL 파라미터에 따라 상태를 설정하고, 없으면 초기화합니다.
-    // React의 제어 컴포넌트와 비동기 쿼리(useQuery)의 특성상,
-    // 상태를 먼저 설정해두면, 나중에 옵션이 로드되었을 때 React가 올바른 값을 선택합니다.
-    setSelectedCat1(urlCat1 ? decodeURIComponent(urlCat1) : '');
-    setSelectedCat2(urlCat2 ? decodeURIComponent(urlCat2) : '');
-    setSelectedCat3(urlCat3 ? decodeURIComponent(urlCat3) : '');
-  }, [searchParams]);
+    const { keyword: stateKeyword, cat1, cat2, cat3 } = location.state
+
+    // 키워드 설정
+    if (stateKeyword) {
+      setKeyword(stateKeyword)
+    }
+
+    // React의 상태 업데이트는 비동기이며, 다음 렌더링 사이클에 반영됩니다.
+    // cat1을 설정하면, 그 다음 렌더링에서 cat2Options를 가져오는 쿼리가 활성화됩니다.
+    // React가 상태와 UI를 자동으로 동기화하므로, 한 번에 모든 상태를 설정하는 것이 가장 간단하고 효과적입니다.
+    if (cat1) {
+      setSelectedCat1(cat1)
+      setShowCategoryHint(true)
+      // cat2, cat3도 함께 설정합니다. 하위 옵션들은 cat1, cat2가 설정된 후 자동으로 로드됩니다.
+      if (cat2) {
+        setSelectedCat2(cat2)
+      }
+      if (cat3) {
+        setSelectedCat3(cat3)
+      }
+
+      // 사용자 경험을 위해 카테고리 섹션으로 스크롤
+      setTimeout(() => {
+        categorySearchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    }
+  }, [location.state])
 
   const handleDirectSearch = () => {
     if (!keyword.trim()) {
@@ -85,10 +107,10 @@ export default function SearchPage() {
           <FaSearch className="mr-2 text-primary" />
           직접 검색
         </h2>
-        {searchParams.get('keyword') && (
+        {location.state?.keyword && (
           <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
             <p className="text-sm text-blue-800">
-              💡 <strong>"{decodeURIComponent(searchParams.get('keyword')!)}"</strong> 축제가 자동으로 입력되었습니다.
+              💡 <strong>"{location.state.keyword}"</strong> 축제가 자동으로 입력되었습니다.
               <br />
               후기 개수를 선택하고 <strong>분석 시작</strong> 버튼을 눌러주세요!
             </p>
@@ -135,9 +157,9 @@ export default function SearchPage() {
       </div>
 
       {/* 카테고리 검색 */}
-      <div className="bg-white rounded-xl shadow-md p-6">
+      <div ref={categorySearchRef} className="bg-white rounded-xl shadow-md p-6">
         <h2 className="text-2xl font-bold mb-4">카테고리별 검색</h2>
-        {(searchParams.get('cat1') || searchParams.get('cat2') || searchParams.get('cat3')) && (
+        {showCategoryHint && (
           <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
             <p className="text-sm text-green-800">
               💡 카테고리가 자동으로 선택되었습니다.

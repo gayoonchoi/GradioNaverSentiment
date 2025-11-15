@@ -4,23 +4,23 @@
 festival_trends_summary.csv를 기반으로 계절별 인기 축제를 분석하고
 워드클라우드, 타임라인 그래프, 테이블 데이터를 생성합니다.
 """
-
 import os
 import pandas as pd
 import matplotlib
-matplotlib.use('Agg')  # GUI 없는 백엔드 사용 (FastAPI 비동기 환경 호환)
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib import font_manager
 import datetime
-import io
-import sqlite3
+import uuid
+from src.data.festival_loader import load_festival_data
+from functools import lru_cache
+from src.infrastructure.web.naver_trend_api import get_trend_data
 
 # 프로젝트 루트
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SUMMARY_CSV_PATH = os.path.join(PROJECT_ROOT, "database", "festival_trends_summary.csv")
 FONT_PATH = r"C:\Windows\Fonts\malgun.ttf"
-DB_PATH = os.path.join(PROJECT_ROOT, "database", "tour_data.db")
 
 # 계절별 색상
 SEASON_COLORS = {
@@ -30,41 +30,22 @@ SEASON_COLORS = {
     "겨울": ["#000000", "#0B60B0", "#2081C3", "#40A2D8", "#F0EDCF"]
 }
 
-
-def get_festival_categories(festival_name: str):
+@lru_cache(maxsize=1)
+def get_festival_to_category_map():
     """
-    축제 이름으로 데이터베이스에서 카테고리 정보 조회
-
-    Args:
-        festival_name: 축제명
-
-    Returns:
-        dict: {cat1, cat2, cat3} 또는 None
+    JSON 파일들을 읽어 {축제명: {cat1, cat2, cat3}} 형태의 역방향 맵을 생성합니다.
+    이 맵은 한 번만 생성되어 캐시됩니다.
     """
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-
-        # 축제 이름으로 카테고리 조회
-        cursor.execute(
-            "SELECT cat1, cat2, cat3 FROM festivals WHERE title = ?",
-            (festival_name,)
-        )
-
-        result = cursor.fetchone()
-        conn.close()
-
-        if result:
-            return {
-                "cat1": result[0].strip() if result[0] else "",
-                "cat2": result[1].strip() if result[1] else "",
-                "cat3": result[2].strip() if result[2] else ""
-            }
-        return None
-    except Exception as e:
-        print(f"[WARN] 카테고리 조회 실패 ({festival_name}): {e}")
-        return None
-
+    print("[Cache] Creating festival-to-category map from JSON files...")
+    festival_data = load_festival_data()
+    mapping = {}
+    for cat1, cat1_data in festival_data.items():
+        for cat2, cat2_data in cat1_data.items():
+            for cat3, festivals in cat2_data.items():
+                for festival_name in festivals:
+                    mapping[festival_name] = {"cat1": cat1, "cat2": cat2, "cat3": cat3}
+    print(f"[Cache] Map created with {len(mapping)} entries.")
+    return mapping
 
 def load_seasonal_data(season: str = None):
     """
@@ -222,16 +203,15 @@ def get_table_data(season: str, top_n: int = 10):
     df = df.reset_index(drop=True)
     df['순위'] = df.index + 1
 
-    # 각 축제의 카테고리 정보 조회
+    # JSON 기반의 역방향 맵에서 각 축제의 카테고리 '이름' 조회
+    category_map = get_festival_to_category_map()
     categories = []
     for festival_name in df['festival_name']:
-        cat_info = get_festival_categories(festival_name)
-        if cat_info:
-            categories.append(cat_info)
-        else:
-            categories.append({"cat1": "", "cat2": "", "cat3": ""})
+        # 맵에서 축제 이름으로 카테고리 정보 조회
+        cat_info = category_map.get(festival_name, {"cat1": "", "cat2": "", "cat3": ""})
+        categories.append(cat_info)
 
-    # 카테고리 정보를 DataFrame에 추가
+    # 카테고리 '이름'을 DataFrame에 추가
     df['cat1'] = [c['cat1'] for c in categories]
     df['cat2'] = [c['cat2'] for c in categories]
     df['cat3'] = [c['cat3'] for c in categories]
@@ -272,10 +252,6 @@ def create_individual_festival_trend_graph(festival_name: str, season: str = Non
     Returns:
         str: 임시 이미지 파일 경로
     """
-    import uuid
-    from src.infrastructure.web.naver_trend_api import get_trend_data
-    import datetime
-
     # 축제 정보 가져오기
     df = load_seasonal_data()
     festival_row = df[df['festival_name'] == festival_name]

@@ -166,12 +166,16 @@ export default function SeasonalTrendPage() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {seasonalData.top_festivals.map((festival) => {
-                    // 카테고리 정보를 포함한 URL 생성
-                    const searchUrl = `/search?keyword=${encodeURIComponent(festival.축제명)}${
-                      festival.cat1 ? `&cat1=${encodeURIComponent(festival.cat1)}` : ''
-                    }${festival.cat2 ? `&cat2=${encodeURIComponent(festival.cat2)}` : ''}${
-                      festival.cat3 ? `&cat3=${encodeURIComponent(festival.cat3)}` : ''
-                    }`
+                    const handleNavigate = () => {
+                      const navigationState = {
+                        keyword: festival.축제명,
+                        cat1: festival.cat1,
+                        cat2: festival.cat2,
+                        cat3: festival.cat3,
+                      }
+                      console.log('Navigating to /search with state:', navigationState)
+                      navigate('/search', { state: navigationState })
+                    }
 
                     return (
                       <tr key={festival.순위} className="hover:bg-gray-50 transition">
@@ -180,7 +184,7 @@ export default function SeasonalTrendPage() {
                         </td>
                         <td
                           className="px-6 py-4 whitespace-nowrap text-sm text-blue-600 font-semibold cursor-pointer hover:text-blue-800 hover:underline"
-                          onClick={() => navigate(searchUrl)}
+                          onClick={handleNavigate}
                           title="클릭하여 검색 페이지로 이동"
                         >
                           {festival.축제명}
@@ -196,7 +200,7 @@ export default function SeasonalTrendPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <button
-                            onClick={() => navigate(searchUrl)}
+                            onClick={handleNavigate}
                             className="inline-flex items-center px-3 py-1.5 bg-blue-500 text-white text-xs font-medium rounded-md hover:bg-blue-600 transition"
                             title="검색 페이지로 이동 (후기 개수 선택 가능)"
                           >
