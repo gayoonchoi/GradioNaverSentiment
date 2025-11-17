@@ -32,6 +32,7 @@ def agent_rule_scorer_on_summary(state: LLMGraphState):
                 print(f"   [필터링] 헤더 문장 제외: {sentence}")
             continue
 
+        # Scorer는 '****' 마커가 있는 원본 문장을 사용해야 합니다.
         score = scorer.score_sentence(
             sentence,
             is_positive_context=is_positive_context,
@@ -44,6 +45,7 @@ def agent_rule_scorer_on_summary(state: LLMGraphState):
                     f"   [불일치 감지] 1차: {'긍정' if is_positive_context else '부정'} 문맥의 문장이 {score:.2f} 점수. 재계산 시도."
                 )
 
+            # 재계산 시도
             recalculated_score = scorer.score_sentence(
                 sentence,
                 is_positive_context=is_positive_context,
@@ -81,7 +83,11 @@ def agent_rule_scorer_on_summary(state: LLMGraphState):
             verdict = "부정"
 
         final_judgments.append(
-            {"sentence": sentence, "final_verdict": verdict, "score": score}
+            {
+                "sentence": sentence.lstrip("- ").strip(), 
+                "final_verdict": verdict, 
+                "score": score,
+            }
         )
         if state["log_details"]:
             print(f"   [{verdict}] 점수: {score:.2f} | 문장: {sentence}")

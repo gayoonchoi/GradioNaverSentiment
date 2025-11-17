@@ -1,8 +1,34 @@
 import React, { useState } from 'react'
 import { FaExternalLinkAlt, FaChevronLeft, FaChevronRight } from 'react-icons/fa'
-import type { BlogResult } from '../types'
-import ReactMarkdown from 'react-markdown' // Import ReactMarkdown
-import SentenceScoreChart from './charts/SentenceScoreChart' // Import SentenceScoreChart
+import type { BlogResult, Judgment } from '../types'
+import SentenceScoreChart from './charts/SentenceScoreChart'
+
+// Helper component to parse and highlight sentences with '****' markers
+const Highlight: React.FC<{ text: string; verdict: string }> = ({ text, verdict }) => {
+  // Split by the marker, keeping the delimiters
+  const parts = text.split(/(\*{4}.*?\*{4})/g).filter(Boolean);
+  const isPositive = verdict === '긍정';
+
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (part.startsWith('****') && part.endsWith('****')) {
+          return (
+            <strong
+              key={index}
+              className={isPositive ? 'text-green-600' : 'text-red-600'}
+            >
+              {part.slice(4, -4)}
+            </strong>
+          );
+        }
+        // Render non-highlighted parts as regular text
+        return <span key={index}>{part}</span>;
+      })}
+    </>
+  );
+};
+
 
 interface BlogTableProps {
   blogs: BlogResult[]
@@ -11,7 +37,7 @@ interface BlogTableProps {
 
 export default function BlogTable({ blogs, pageSize = 5 }: BlogTableProps) {
   const [currentPage, setCurrentPage] = useState(1)
-  const [selectedBlogIndex, setSelectedBlogIndex] = useState<number | null>(null) // State for selected blog
+  const [selectedBlogIndex, setSelectedBlogIndex] = useState<number | null>(null)
   const totalPages = Math.ceil(blogs.length / pageSize)
 
   const startIndex = (currentPage - 1) * pageSize
@@ -20,11 +46,11 @@ export default function BlogTable({ blogs, pageSize = 5 }: BlogTableProps) {
 
   const goToPage = (page: number) => {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)))
-    setSelectedBlogIndex(null); // Close detail view on page change
+    setSelectedBlogIndex(null);
   }
 
   const handleRowClick = (index: number) => {
-    setSelectedBlogIndex(selectedBlogIndex === index ? null : index); // Toggle detail view
+    setSelectedBlogIndex(selectedBlogIndex === index ? null : index);
   }
 
   if (blogs.length === 0) {
@@ -64,7 +90,7 @@ export default function BlogTable({ blogs, pageSize = 5 }: BlogTableProps) {
               <React.Fragment key={startIndex + index}>
                 <tr
                   className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => handleRowClick(startIndex + index)} // Use global index for selection
+                  onClick={() => handleRowClick(startIndex + index)}
                 >
                   <td className="px-6 py-4 text-sm">
                     <a
@@ -72,7 +98,7 @@ export default function BlogTable({ blogs, pageSize = 5 }: BlogTableProps) {
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-primary hover:underline flex items-center space-x-2"
-                      onClick={(e) => e.stopPropagation()} // Prevent row click when link is clicked
+                      onClick={(e) => e.stopPropagation()}
                     >
                       <span className="truncate max-w-xs">
                         {blog['블로그 제목']}
@@ -105,15 +131,31 @@ export default function BlogTable({ blogs, pageSize = 5 }: BlogTableProps) {
                     {blog['평균 만족도'] || 'N/A'}
                   </td>
                 </tr>
-                {selectedBlogIndex === (startIndex + index) && ( // Use global index for comparison
+                {selectedBlogIndex === (startIndex + index) && (
                   <tr className="bg-gray-100">
                     <td colSpan={5} className="p-4">
                       <div className="space-y-4">
                         <h4 className="text-lg font-bold mb-2">문장별 감성 분석 상세</h4>
                         {blog.judgments && blog.judgments.length > 0 ? (
                           <>
-                            <div className="prose max-w-none text-sm">
-                              <ReactMarkdown>{blog['긍/부정 문장 요약']}</ReactMarkdown>
+                            <div className="space-y-2 text-sm">
+                              {blog.judgments.map((judgment: Judgment, jIndex: number) => {
+                                const isPositive = judgment.final_verdict === '긍정';
+                                const verdictColor = isPositive ? 'text-green-600' : 'text-red-600';
+                                // BE에서 넘어온 문장 앞의 '- ' 또는 '-' 제거
+                                const cleanSentence = judgment.sentence.replace(/^- ?/, '').trim();
+
+                                return (
+                                  <p key={jIndex} className="text-gray-800">
+                                    <span className={`font-semibold ${verdictColor}`}>
+                                      [{judgment.final_verdict}({judgment.satisfaction_level || 'N/A'}점)]
+                                    </span>
+                                    <span className="ml-2">
+                                      <Highlight text={cleanSentence} verdict={judgment.final_verdict} />
+                                    </span>
+                                  </p>
+                                );
+                              })}
                             </div>
                             <div className="mt-4">
                               <h5 className="text-md font-semibold mb-2">점수 분포 그래프</h5>

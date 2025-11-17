@@ -92,13 +92,19 @@ def save_raw_analysis_to_cache(keyword: str, num_reviews: int, results: dict) ->
         cacheable_results = {}
         for key, value in results.items():
             if isinstance(value, pd.DataFrame):
-                # DataFrame을 records 형식과 함께 columns 정보도 저장
+                # DataFrame을 직렬화하기 전에 datetime 열을 문자열로 변환
+                df_copy = value.copy()
+                for col in df_copy.columns:
+                    # is_datetime64_any_dtype를 사용하여 모든 datetime 형식 확인
+                    if pd.api.types.is_datetime64_any_dtype(df_copy[col]):
+                        df_copy[col] = df_copy[col].apply(lambda x: x.isoformat() if pd.notnull(x) else None)
+                
                 cacheable_results[key] = {
                     '_type': 'DataFrame',
-                    'data': value.to_dict('records'),
-                    'columns': list(value.columns)
+                    'data': df_copy.to_dict('records'),
+                    'columns': list(df_copy.columns)
                 }
-            elif isinstance(value, (datetime,)):
+            elif isinstance(value, (datetime, pd.Timestamp)):
                 cacheable_results[key] = {
                     '_type': 'datetime',
                     'value': value.isoformat() if value else None

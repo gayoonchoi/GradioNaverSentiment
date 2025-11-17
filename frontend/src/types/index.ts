@@ -24,6 +24,13 @@ export interface TrendMetrics {
   after_avg: number;
 }
 
+export interface Judgment {
+  sentence: string;
+  final_verdict: string;
+  score: number;
+  satisfaction_level: number;
+}
+
 export interface BlogResult {
   '블로그 제목': string;
   '링크': string;
@@ -35,12 +42,7 @@ export interface BlogResult {
   '부정 비율 (%)': string;
   '긍/부정 문장 요약': string;
   '평균 만족도'?: string;
-  judgments: {
-    sentence: string;
-    final_verdict: string;
-    score: number;
-    satisfaction_level: number;
-  }[];
+  judgments: Judgment[];
 }
 
 export interface KeywordAnalysisResponse {
