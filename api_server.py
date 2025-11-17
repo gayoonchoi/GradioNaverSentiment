@@ -29,7 +29,13 @@ from src.data.festival_loader import (
     get_cat3_choices,
     get_festivals
 )
-from src.application.utils import create_driver, load_cached_analysis, save_analysis_to_cache
+from src.application.utils import (
+    create_driver,
+    load_cached_analysis,
+    save_analysis_to_cache,
+    generate_recommendation_analysis,
+    generate_comparison_recommendation
+)
 from src.application import seasonal_analysis
 from src.infrastructure.reporting import seasonal_wordcloud
 
@@ -164,6 +170,47 @@ class ComparisonRequest(BaseModel):
     keyword_b: str
     num_reviews: int = 10
 
+class CategoryComparisonRequest(BaseModel):
+    cat1_a: str
+    cat2_a: str
+    cat3_a: str
+    cat1_b: str
+    cat2_b: str
+    cat3_b: str
+    num_reviews: int = 10
+
+class SingleRecommendationRequest(BaseModel):
+    keyword: str
+    num_reviews: int = 10
+    region: str
+    season: str
+
+class ComparisonRecommendationRequest(BaseModel):
+    keyword_a: str
+    keyword_b: str
+    num_reviews: int = 10
+    region: str
+    season: str
+
+class CategoryRecommendationRequest(BaseModel):
+    cat1: str
+    cat2: str
+    cat3: str
+    num_reviews: int = 10
+    region: str
+    season: str
+
+class CategoryComparisonRecommendationRequest(BaseModel):
+    cat1_a: str
+    cat2_a: str
+    cat3_a: str
+    cat1_b: str
+    cat2_b: str
+    cat3_b: str
+    num_reviews: int = 10
+    region: str
+    season: str
+
 # ==================== 엔드포인트 ====================
 
 @app.get("/")
@@ -294,7 +341,8 @@ async def analyze_category(request: CategoryAnalysisRequest):
             "category_overall_summary": results.get("category_overall_summary", ""),
             "category_negative_summary": results.get("category_negative_summary", ""),
             "seasonal_word_clouds": results.get("category_seasonal_word_clouds", {}),
-            
+            "keyword_wordclouds": results.get("category_keyword_wordclouds", {}),  # 블로그 기반 키워드 빈도수 워드클라우드
+
             # 신규 추가된 종합 분석 데이터
             "all_scores": results.get("all_scores", []),
             "satisfaction_counts": results.get("satisfaction_counts", {}),
@@ -369,6 +417,401 @@ async def analyze_comparison(request: ComparisonRequest):
         print(f"[ERROR] 비교 분석 중 오류: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
+
+@app.post("/api/analyze/category-comparison")
+async def analyze_category_comparison(request: CategoryComparisonRequest):
+    """
+    카테고리 비교 분석 (병렬 처리)
+
+    두 개의 카테고리를 동시에 분석하여 시간 절약
+    """
+    global driver
+    if not driver:
+        driver = create_driver()
+
+    try:
+        category_a = f"{request.cat1_a} > {request.cat2_a} > {request.cat3_a}"
+        category_b = f"{request.cat1_b} > {request.cat2_b} > {request.cat3_b}"
+        print(f"📊 카테고리 비교 분석 시작 (병렬 처리): {category_a} vs {category_b}")
+
+        class DummyProgress:
+            def __call__(self, *args, **kwargs):
+                pass
+
+        progress = DummyProgress()
+
+        # 병렬로 두 카테고리 동시 분석
+        async def analyze_category_a():
+            import asyncio
+            return await asyncio.to_thread(
+                perform_category_analysis,
+                cat1=request.cat1_a,
+                cat2=request.cat2_a,
+                cat3=request.cat3_a,
+                num_reviews=request.num_reviews,
+                driver=driver,
+                log_details=True,
+                progress=progress,
+                initial_progress=0,
+                total_steps=1
+            )
+
+        async def analyze_category_b():
+            import asyncio
+            return await asyncio.to_thread(
+                perform_category_analysis,
+                cat1=request.cat1_b,
+                cat2=request.cat2_b,
+                cat3=request.cat3_b,
+                num_reviews=request.num_reviews,
+                driver=driver,
+                log_details=True,
+                progress=progress,
+                initial_progress=0,
+                total_steps=1
+            )
+
+        # 두 작업을 동시에 실행
+        import asyncio
+        results_a, results_b = await asyncio.gather(
+            analyze_category_a(),
+            analyze_category_b()
+        )
+
+        if "error" in results_a:
+            raise HTTPException(status_code=400, detail=f"카테고리 A 분석 실패: {results_a['error']}")
+        if "error" in results_b:
+            raise HTTPException(status_code=400, detail=f"카테고리 B 분석 실패: {results_b['error']}")
+
+        response = {
+            "status": "카테고리 비교 분석 완료 (병렬 처리)",
+            "category_a": category_a,
+            "category_b": category_b,
+            "results_a": {
+                "total_festivals": results_a.get("total_festivals", 0),
+                "analyzed_festivals": results_a.get("analyzed_festivals", 0),
+                "total_pos": results_a.get("total_pos", 0),
+                "total_neg": results_a.get("total_neg", 0),
+                "avg_satisfaction": results_a.get("avg_satisfaction", 3.0),
+                "satisfaction_counts": results_a.get("satisfaction_counts", {}),
+                "seasonal_data": results_a.get("seasonal_data", {}),
+                "category_overall_summary": results_a.get("category_overall_summary", ""),
+                "distribution_interpretation": results_a.get("distribution_interpretation", ""),
+            },
+            "results_b": {
+                "total_festivals": results_b.get("total_festivals", 0),
+                "analyzed_festivals": results_b.get("analyzed_festivals", 0),
+                "total_pos": results_b.get("total_pos", 0),
+                "total_neg": results_b.get("total_neg", 0),
+                "avg_satisfaction": results_b.get("avg_satisfaction", 3.0),
+                "satisfaction_counts": results_b.get("satisfaction_counts", {}),
+                "seasonal_data": results_b.get("seasonal_data", {}),
+                "category_overall_summary": results_b.get("category_overall_summary", ""),
+                "distribution_interpretation": results_b.get("distribution_interpretation", ""),
+            },
+            "comparison_summary": f"{category_a}와 {category_b}의 카테고리 비교 분석이 완료되었습니다.",
+        }
+
+        print(f"[OK] 카테고리 비교 분석 완료 (병렬 처리)")
+        return response
+
+    except Exception as e:
+        print(f"[ERROR] 카테고리 비교 분석 중 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"분석 중 오류 발생: {str(e)}")
+
+@app.post("/api/recommend/single")
+async def recommend_single_analysis(request: SingleRecommendationRequest):
+    """
+    단일 축제 분석 결과를 바탕으로 지역과 계절을 고려한 AI 추천 분석
+
+    Args:
+        keyword: 축제명
+        num_reviews: 분석할 리뷰 수
+        region: 사용자 지역 (예: 서울, 부산)
+        season: 사용자 계절 (예: 봄, 여름, 가을, 겨울)
+
+    Returns:
+        recommendation: AI 추천 분석 텍스트 (마크다운 형식)
+    """
+    try:
+        print(f"🤖 AI 추천 분석 시작: {request.keyword} ({request.region}, {request.season})")
+
+        # 1. 기존 분석 결과 가져오기 (캐싱 지원)
+        analysis_result = analyze_with_cache(
+            keyword=request.keyword,
+            num_reviews=request.num_reviews,
+            log_details=True,
+            progress_desc="추천 분석"
+        )
+
+        if "error" in analysis_result:
+            raise HTTPException(status_code=400, detail=analysis_result["error"])
+
+        # 2. AI 추천 분석 생성
+        recommendation = generate_recommendation_analysis(
+            analysis_result=analysis_result,
+            region=request.region,
+            season=request.season
+        )
+
+        response = {
+            "status": "추천 분석 완료",
+            "keyword": request.keyword,
+            "region": request.region,
+            "season": request.season,
+            "recommendation": recommendation
+        }
+
+        print(f"[OK] AI 추천 분석 완료: {request.keyword}")
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] AI 추천 분석 중 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"추천 분석 중 오류 발생: {str(e)}")
+
+@app.post("/api/recommend/category")
+async def recommend_category_analysis(request: CategoryRecommendationRequest):
+    """
+    카테고리 분석 결과를 바탕으로 지역과 계절을 고려한 AI 추천 분석
+    """
+    global driver
+    if not driver:
+        driver = create_driver()
+
+    try:
+        category = f"{request.cat1} > {request.cat2} > {request.cat3}"
+        print(f"🤖 AI 카테고리 추천 분석 시작: {category} ({request.region}, {request.season})")
+
+        # 1. 카테고리 분석 실행
+        class DummyProgress:
+            def __call__(self, *args, **kwargs):
+                pass
+
+        progress = DummyProgress()
+
+        results = perform_category_analysis(
+            cat1=request.cat1,
+            cat2=request.cat2,
+            cat3=request.cat3,
+            num_reviews=request.num_reviews,
+            driver=driver,
+            log_details=True,
+            progress=progress,
+            initial_progress=0,
+            total_steps=1
+        )
+
+        if "error" in results:
+            raise HTTPException(status_code=400, detail=results["error"])
+
+        # 2. API 응답 형식으로 변환
+        analysis_result = {
+            "keyword": category,
+            "total_pos": results.get("total_pos", 0),
+            "total_neg": results.get("total_neg", 0),
+            "avg_satisfaction": results.get("avg_satisfaction", 3.0),
+            "sentiment_score": (results.get("total_pos", 0) - results.get("total_neg", 0)) / max(results.get("total_pos", 0) + results.get("total_neg", 0), 1),
+            "trend_metrics": {"trend_index": 0},  # 카테고리는 트렌드 지수 없음
+            "negative_summary": results.get("category_negative_summary", "")
+        }
+
+        # 3. AI 추천 분석 생성
+        recommendation = generate_recommendation_analysis(
+            analysis_result=analysis_result,
+            region=request.region,
+            season=request.season
+        )
+
+        response = {
+            "status": "카테고리 추천 분석 완료",
+            "category": category,
+            "region": request.region,
+            "season": request.season,
+            "recommendation": recommendation
+        }
+
+        print(f"[OK] AI 카테고리 추천 분석 완료: {category}")
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] AI 카테고리 추천 분석 중 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"추천 분석 중 오류 발생: {str(e)}")
+
+@app.post("/api/recommend/comparison")
+async def recommend_comparison_analysis(request: ComparisonRecommendationRequest):
+    """
+    2개 축제 비교 분석 결과를 바탕으로 지역과 계절을 고려한 AI 비교 추천 분석
+    """
+    try:
+        print(f"🤖 AI 비교 추천 분석 시작: {request.keyword_a} vs {request.keyword_b} ({request.region}, {request.season})")
+
+        # 1. 두 축제 분석 결과 가져오기
+        results_a = analyze_with_cache(
+            keyword=request.keyword_a,
+            num_reviews=request.num_reviews,
+            log_details=True,
+            progress_desc="비교 추천(A)"
+        )
+
+        results_b = analyze_with_cache(
+            keyword=request.keyword_b,
+            num_reviews=request.num_reviews,
+            log_details=True,
+            progress_desc="비교 추천(B)"
+        )
+
+        if "error" in results_a:
+            raise HTTPException(status_code=400, detail=f"축제 A 분석 실패: {results_a['error']}")
+        if "error" in results_b:
+            raise HTTPException(status_code=400, detail=f"축제 B 분석 실패: {results_b['error']}")
+
+        # 2. AI 비교 추천 분석 생성
+        recommendation = generate_comparison_recommendation(
+            results_a=results_a,
+            results_b=results_b,
+            name_a=request.keyword_a,
+            name_b=request.keyword_b,
+            region=request.region,
+            season=request.season
+        )
+
+        response = {
+            "status": "비교 추천 분석 완료",
+            "keyword_a": request.keyword_a,
+            "keyword_b": request.keyword_b,
+            "region": request.region,
+            "season": request.season,
+            "recommendation": recommendation
+        }
+
+        print(f"[OK] AI 비교 추천 분석 완료")
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] AI 비교 추천 분석 중 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"추천 분석 중 오류 발생: {str(e)}")
+
+@app.post("/api/recommend/category-comparison")
+async def recommend_category_comparison_analysis(request: CategoryComparisonRecommendationRequest):
+    """
+    카테고리 비교 분석 결과를 바탕으로 지역과 계절을 고려한 AI 비교 추천 분석 (병렬 처리)
+    """
+    global driver
+    if not driver:
+        driver = create_driver()
+
+    try:
+        category_a = f"{request.cat1_a} > {request.cat2_a} > {request.cat3_a}"
+        category_b = f"{request.cat1_b} > {request.cat2_b} > {request.cat3_b}"
+        print(f"🤖 AI 카테고리 비교 추천 분석 시작: {category_a} vs {category_b} ({request.region}, {request.season})")
+
+        class DummyProgress:
+            def __call__(self, *args, **kwargs):
+                pass
+
+        progress = DummyProgress()
+
+        # 1. 병렬로 두 카테고리 동시 분석
+        async def analyze_category_a():
+            import asyncio
+            return await asyncio.to_thread(
+                perform_category_analysis,
+                cat1=request.cat1_a,
+                cat2=request.cat2_a,
+                cat3=request.cat3_a,
+                num_reviews=request.num_reviews,
+                driver=driver,
+                log_details=True,
+                progress=progress,
+                initial_progress=0,
+                total_steps=1
+            )
+
+        async def analyze_category_b():
+            import asyncio
+            return await asyncio.to_thread(
+                perform_category_analysis,
+                cat1=request.cat1_b,
+                cat2=request.cat2_b,
+                cat3=request.cat3_b,
+                num_reviews=request.num_reviews,
+                driver=driver,
+                log_details=True,
+                progress=progress,
+                initial_progress=0,
+                total_steps=1
+            )
+
+        import asyncio
+        results_a, results_b = await asyncio.gather(
+            analyze_category_a(),
+            analyze_category_b()
+        )
+
+        if "error" in results_a:
+            raise HTTPException(status_code=400, detail=f"카테고리 A 분석 실패: {results_a['error']}")
+        if "error" in results_b:
+            raise HTTPException(status_code=400, detail=f"카테고리 B 분석 실패: {results_b['error']}")
+
+        # 2. API 응답 형식으로 변환
+        formatted_a = {
+            "keyword": category_a,
+            "total_pos": results_a.get("total_pos", 0),
+            "total_neg": results_a.get("total_neg", 0),
+            "avg_satisfaction": results_a.get("avg_satisfaction", 3.0),
+            "sentiment_score": (results_a.get("total_pos", 0) - results_a.get("total_neg", 0)) / max(results_a.get("total_pos", 0) + results_a.get("total_neg", 0), 1),
+            "trend_metrics": {"trend_index": 0},
+            "negative_summary": results_a.get("category_negative_summary", "")
+        }
+
+        formatted_b = {
+            "keyword": category_b,
+            "total_pos": results_b.get("total_pos", 0),
+            "total_neg": results_b.get("total_neg", 0),
+            "avg_satisfaction": results_b.get("avg_satisfaction", 3.0),
+            "sentiment_score": (results_b.get("total_pos", 0) - results_b.get("total_neg", 0)) / max(results_b.get("total_pos", 0) + results_b.get("total_neg", 0), 1),
+            "trend_metrics": {"trend_index": 0},
+            "negative_summary": results_b.get("category_negative_summary", "")
+        }
+
+        # 3. AI 비교 추천 분석 생성
+        recommendation = generate_comparison_recommendation(
+            results_a=formatted_a,
+            results_b=formatted_b,
+            name_a=category_a,
+            name_b=category_b,
+            region=request.region,
+            season=request.season
+        )
+
+        response = {
+            "status": "카테고리 비교 추천 분석 완료",
+            "category_a": category_a,
+            "category_b": category_b,
+            "region": request.region,
+            "season": request.season,
+            "recommendation": recommendation
+        }
+
+        print(f"[OK] AI 카테고리 비교 추천 분석 완료")
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] AI 카테고리 비교 추천 분석 중 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"추천 분석 중 오류 발생: {str(e)}")
 
 @app.get("/api/seasonal/analyze")
 async def analyze_seasonal_trends(season: str = Query(..., description="Season: 봄, 여름, 가을, 겨울")):

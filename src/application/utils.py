@@ -539,12 +539,17 @@ def generate_distribution_interpretation(satisfaction_counts: dict, total_count:
             before_avg = trend_metrics.get('before_avg', 0)
             during_avg = trend_metrics.get('during_avg', 0)
             after_avg = trend_metrics.get('after_avg', 0)
+
+            # Safely format numeric values, or display as is if not numeric
+            def format_metric(value):
+                return f"{value:.1f}" if isinstance(value, (int, float)) else str(value)
+
             trend_str = f"""
 ### 5&6. 트렌드 분석 (집중 & 전체)
-- 축제 전 평균 검색량: {before_avg:.1f}
-- 축제 중 평균 검색량: {during_avg:.1f}
-- 축제 후 평균 검색량: {after_avg:.1f}
-- 트렌드 지수: {trend_index:.1f}% (100 이상이면 축제 기간 동안 관심도 증가)"""
+- 축제 전 평균 검색량: {format_metric(before_avg)}
+- 축제 중 평균 검색량: {format_metric(during_avg)}
+- 축제 후 평균 검색량: {format_metric(after_avg)}
+- 트렌드 지수: {format_metric(trend_index)}% (100 이상이면 축제 기간 동안 관심도 증가)"""
 
         prompt = f"""다음은 축제 리뷰의 종합 분석 데이터입니다. **6개의 차트 데이터를 모두 고려하여** 전문가 입장에서 종합적인 해석을 제공해주세요.
 
@@ -618,3 +623,163 @@ def generate_overall_summary(results: dict) -> str:
         print(f"종합 평가 생성 중 오류: {e}")
         traceback.print_exc()
         return "종합 평가를 생성하는 데 실패했습니다."
+
+def generate_recommendation_analysis(analysis_result: dict, region: str, season: str) -> str:
+    """
+    단일 축제 분석 결과를 바탕으로 지역과 계절을 고려한 AI 추천 분석 생성
+
+    Args:
+        analysis_result: 축제 분석 결과 딕셔너리
+        region: 사용자가 입력한 지역 (예: "서울", "부산")
+        season: 사용자가 입력한 계절 (예: "봄", "여름", "가을", "겨울")
+
+    Returns:
+        AI 추천 분석 텍스트 (마크다운 형식)
+    """
+    try:
+        llm = get_llm_client()
+
+        keyword = analysis_result.get("keyword", "알 수 없음")
+        total_pos = analysis_result.get("total_pos", 0)
+        total_neg = analysis_result.get("total_neg", 0)
+        avg_satisfaction = analysis_result.get("avg_satisfaction", 0)
+        sentiment_score = analysis_result.get("sentiment_score", 0)
+        trend_index = analysis_result.get("trend_metrics", {}).get("trend_index", 0)
+        negative_summary = analysis_result.get("negative_summary", "")
+        distribution_interpretation = analysis_result.get("distribution_interpretation", "")
+
+        total_sentiment = total_pos + total_neg
+        pos_ratio = (total_pos / total_sentiment * 100) if total_sentiment > 0 else 0
+
+        prompt = f"""
+        당신은 축제 기획 전문가이자 데이터 분석가입니다. 다음 축제 분석 결과를 바탕으로 **{region} 지역**에서 **{season} 계절**에 유사한 축제를 기획할 경우의 성공 가능성과 기획 방향을 제시해주세요.
+
+        ### 분석 대상 축제
+        **축제명**: {keyword}
+
+        ### 분석 결과 요약
+        - **평균 만족도**: {avg_satisfaction:.2f} / 5.0
+        - **감성 점수**: {sentiment_score:.2f} / 100
+        - **긍정 비율**: {pos_ratio:.1f}%
+        - **트렌드 지수**: {trend_index:.1f}
+        - **주요 불만 사항**: {negative_summary}
+        - **분포 해석**: {distribution_interpretation}
+
+        ### 사용자 입력 조건
+        - **목표 지역**: {region}
+        - **목표 계절**: {season}
+
+        ### 분석 요청
+        위 데이터를 종합하여 다음 내용을 마크다운 형식으로 작성해주세요:
+
+        1. **성공 가능성 평가** (상/중/하)
+           - 분석 결과 지표들(만족도, 긍정률, 트렌드 지수)을 종합하여 {region}의 {season}에 이와 유사한 축제를 기획할 경우 성공 가능성을 평가하세요.
+
+        2. **핵심 기획 방향** (3-5가지)
+           - 주요 불만 사항을 참고하여 개선해야 할 점을 구체적으로 제시하세요.
+           - 예: "주차장 공간을 넓게 확보해야 합니다.", "대기 시간 단축을 위한 부스 증설이 필요합니다."
+
+        3. **지역 특화 전략**
+           - {region} 지역의 특성을 고려한 축제 기획 아이디어를 제안하세요.
+
+        4. **계절 활용 전략**
+           - {season} 계절의 특성을 살린 프로그램이나 콘텐츠를 제안하세요.
+
+        5. **예상 리스크 및 대응 방안**
+           - 불만 사항 분석을 바탕으로 예상되는 문제점과 사전 대응 방안을 제시하세요.
+
+        결과는 방문객 관점에서 실용적이고 구체적으로 작성해주세요.
+        """
+
+        response = llm.invoke(prompt)
+        return response.content.strip()
+    except Exception as e:
+        print(f"AI 추천 분석 생성 중 오류: {e}")
+        traceback.print_exc()
+        return "AI 추천 분석을 생성하는 데 실패했습니다."
+
+def generate_comparison_recommendation(results_a: dict, results_b: dict, name_a: str, name_b: str, region: str, season: str) -> str:
+    """
+    두 축제(또는 카테고리) 비교 분석 결과를 바탕으로 지역과 계절을 고려한 AI 비교 추천 생성
+
+    Args:
+        results_a: 축제/카테고리 A 분석 결과
+        results_b: 축제/카테고리 B 분석 결과
+        name_a: 축제/카테고리 A 이름
+        name_b: 축제/카테고리 B 이름
+        region: 사용자가 입력한 지역
+        season: 사용자가 입력한 계절
+
+    Returns:
+        AI 비교 추천 분석 텍스트 (마크다운 형식)
+    """
+    try:
+        llm = get_llm_client()
+
+        # A 데이터
+        total_pos_a = results_a.get("total_pos", 0)
+        total_neg_a = results_a.get("total_neg", 0)
+        avg_sat_a = results_a.get("avg_satisfaction", 0)
+        total_a = total_pos_a + total_neg_a
+        pos_ratio_a = (total_pos_a / total_a * 100) if total_a > 0 else 0
+
+        # B 데이터
+        total_pos_b = results_b.get("total_pos", 0)
+        total_neg_b = results_b.get("total_neg", 0)
+        avg_sat_b = results_b.get("avg_satisfaction", 0)
+        total_b = total_pos_b + total_neg_b
+        pos_ratio_b = (total_pos_b / total_b * 100) if total_b > 0 else 0
+
+        prompt = f"""
+        당신은 축제 기획 전문 컨설턴트입니다. 다음 두 축제(또는 카테고리)의 분석 결과를 비교하여, **{region} 지역**에서 **{season} 계절**에 축제를 기획할 경우 어떤 방향이 더 적합한지 종합적으로 분석해주세요.
+
+        ### 비교 대상
+        **A**: {name_a}
+        **B**: {name_b}
+
+        ### A 분석 결과
+        - **평균 만족도**: {avg_sat_a:.2f} / 5.0
+        - **긍정 비율**: {pos_ratio_a:.1f}%
+        - **긍정/부정 문장 수**: {total_pos_a} / {total_neg_a}
+
+        ### B 분석 결과
+        - **평균 만족도**: {avg_sat_b:.2f} / 5.0
+        - **긍정 비율**: {pos_ratio_b:.1f}%
+        - **긍정/부정 문장 수**: {total_pos_b} / {total_neg_b}
+
+        ### 사용자 입력 조건
+        - **목표 지역**: {region}
+        - **목표 계절**: {season}
+
+        ### 분석 요청
+        위 비교 데이터를 바탕으로 다음 내용을 마크다운 형식으로 작성해주세요:
+
+        1. **종합 비교 분석**
+           - A와 B를 만족도, 긍정률 등 주요 지표로 비교 분석하세요.
+           - 각각의 강점과 약점을 명확히 제시하세요.
+
+        2. **우수 사례 (A가 더 나은 점 / B가 더 나은 점)**
+           - A가 B보다 우수한 측면
+           - B가 A보다 우수한 측면
+
+        3. **지역별 추천 순위**
+           - **{region} 지역**에 더 적합한 축제 유형을 1순위, 2순위로 제시하세요.
+           - 각 순위에 대한 근거를 명확히 설명하세요.
+
+        4. **계절별 추천 순위**
+           - **{season} 계절**에 더 적합한 축제 유형을 1순위, 2순위로 제시하세요.
+           - 계절 특성을 고려한 추천 이유를 설명하세요.
+
+        5. **최종 기획 방향 제안**
+           - {region}의 {season}에 축제를 기획한다면, A와 B 중 어느 유형을 선택해야 하는지 최종 결론을 내리세요.
+           - 선택한 유형의 강점을 살리고 약점을 보완하는 구체적인 기획 방향을 제시하세요.
+
+        실용적이고 데이터 기반의 구체적인 조언을 제공해주세요.
+        """
+
+        response = llm.invoke(prompt)
+        return response.content.strip()
+    except Exception as e:
+        print(f"AI 비교 추천 분석 생성 중 오류: {e}")
+        traceback.print_exc()
+        return "AI 비교 추천 분석을 생성하는 데 실패했습니다."

@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { getSeasonalTrends, getFestivalTrend } from '../lib/api'
-import { FaCloudSun, FaSun, FaLeaf, FaSnowflake, FaSearch, FaLayerGroup } from 'react-icons/fa'
+import { FaCloudSun, FaSun, FaLeaf, FaSnowflake, FaSearch} from 'react-icons/fa'
+import type { SeasonalTrendsResponse } from '../types'
 
 type Season = '봄' | '여름' | '가을' | '겨울'
 
@@ -23,10 +24,11 @@ export default function SeasonalTrendPage() {
     data: seasonalData,
     isLoading: isSeasonalLoading,
     error: seasonalError,
-  } = useQuery({
+  } = useQuery<SeasonalTrendsResponse>({
     queryKey: ['seasonal-trends', selectedSeason],
     queryFn: () => getSeasonalTrends(selectedSeason),
     enabled: !!selectedSeason,
+    refetchOnMount: true,
   })
 
   // 개별 축제 트렌드 fetch
@@ -38,6 +40,7 @@ export default function SeasonalTrendPage() {
     queryKey: ['festival-trend', selectedFestival, selectedSeason],
     queryFn: () => getFestivalTrend(selectedFestival, selectedSeason),
     enabled: false, // 수동 실행
+    refetchOnMount: true,
   })
 
   const handleViewFestivalTrend = () => {

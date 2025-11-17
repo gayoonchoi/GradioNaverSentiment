@@ -141,7 +141,7 @@ def create_seasonal_trend_wordcloud(trend_scores: dict, season_name: str, mask_p
         font_path = find_font_path()
         if not font_path:
             return None
-        
+
         mask_array = None
         if mask_path and os.path.exists(mask_path):
             try:
@@ -162,7 +162,7 @@ def create_seasonal_trend_wordcloud(trend_scores: dict, season_name: str, mask_p
 
         temp_dir = os.path.join(os.getcwd(), "temp_images")
         os.makedirs(temp_dir, exist_ok=True)
-        
+
         # 파일명에 계절 이름 포함
         sanitized_season_name = re.sub(r'[\\/:*?"<>|]', '_', season_name)
         trend_wc_path = os.path.join(temp_dir, f"wc_trend_{sanitized_season_name}_{uuid.uuid4()}.png")
@@ -173,5 +173,80 @@ def create_seasonal_trend_wordcloud(trend_scores: dict, season_name: str, mask_p
 
     except Exception as e:
         print(f"[WordCloud] Error during seasonal trend WC generation: {e}")
+        traceback.print_exc()
+        return None
+
+def create_keyword_frequency_wordcloud(aspect_sentiment_pairs: list, category_name: str, season_name: str, mask_path: str = None) -> str | None:
+    """
+    블로그 내용 기반의 키워드 빈도수 워드클라우드를 생성합니다.
+    aspect_sentiment_pairs에서 aspect(키워드)만 추출하여 빈도수를 계산합니다.
+
+    :param aspect_sentiment_pairs: [(aspect, sentiment), ...] 형태의 리스트
+    :param category_name: 카테고리 이름 (파일명에 사용)
+    :param season_name: 계절 이름 (파일명에 사용, 예: "봄")
+    :param mask_path: 워드클라우드에 적용할 마스크 이미지 경로
+    :return: 생성된 워드클라우드 이미지 파일 경로 또는 None
+    """
+    if not aspect_sentiment_pairs:
+        return None
+
+    try:
+        font_path = find_font_path()
+        if not font_path:
+            return None
+
+        # aspect(키워드)의 빈도수 계산
+        keyword_freq = defaultdict(int)
+
+        for aspect, sentiment in aspect_sentiment_pairs:
+            # 키워드 유효성 검사 (불용어, 너무 짧은 단어 제외)
+            if not aspect or len(aspect) < 2 or aspect in STOPWORDS:
+                continue
+
+            # 빈도수 증가
+            keyword_freq[aspect] += 1
+
+        if not keyword_freq:
+            print(f"[WordCloud] No valid keywords found for {category_name} - {season_name}")
+            return None
+
+        # 마스크 이미지 로드
+        mask_array = None
+        if mask_path and os.path.exists(mask_path):
+            try:
+                img = Image.open(mask_path).convert("L")
+                mask_array = np.array(img, dtype=np.uint8)
+                print(f"[WordCloud] Mask loaded for keyword WC: {mask_path}")
+            except Exception as e:
+                print(f"[WordCloud] Error loading mask image: {e}")
+                mask_array = None
+
+        # 워드클라우드 생성
+        wc = WordCloud(
+            font_path=font_path,
+            width=800,
+            height=800,
+            background_color='white',
+            mask=mask_array,
+            max_words=100,
+            colormap='plasma',  # 키워드 빈도수는 plasma 컬러맵 사용
+            contour_width=1,
+            contour_color='purple'
+        ).generate_from_frequencies(keyword_freq)
+
+        # 파일 저장
+        temp_dir = os.path.join(os.getcwd(), "temp_images")
+        os.makedirs(temp_dir, exist_ok=True)
+
+        sanitized_category = re.sub(r'[\\/:*?"<>|]', '_', category_name)
+        sanitized_season = re.sub(r'[\\/:*?"<>|]', '_', season_name)
+        wc_path = os.path.join(temp_dir, f"wc_keyword_{sanitized_category}_{sanitized_season}_{uuid.uuid4()}.png")
+        wc.to_file(wc_path)
+        print(f"[WordCloud] Keyword frequency WC generated for {category_name} - {season_name}: {wc_path}")
+
+        return wc_path
+
+    except Exception as e:
+        print(f"[WordCloud] Error during keyword frequency WC generation: {e}")
         traceback.print_exc()
         return None

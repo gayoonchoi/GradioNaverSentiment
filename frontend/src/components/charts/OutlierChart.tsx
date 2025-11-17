@@ -46,6 +46,7 @@ export default function OutlierChart({ scores }: OutlierChartProps) {
             type="number"
             dataKey="y"
             domain={['dataMin - 0.5', 'dataMax + 0.5']}
+            tickFormatter={(value) => value.toFixed(2)}
           />
           <Tooltip
             cursor={{ strokeDasharray: '3 3' }}

@@ -22,6 +22,7 @@ export default function SearchPage() {
   const { data: cat1Options = [] } = useQuery({
     queryKey: ['categories'],
     queryFn: getCategories,
+    refetchOnMount: true,
   })
   console.log('cat1Options:', cat1Options)
 
@@ -29,6 +30,7 @@ export default function SearchPage() {
     queryKey: ['categories', 'medium', selectedCat1],
     queryFn: () => getMediumCategories(selectedCat1),
     enabled: !!selectedCat1,
+    refetchOnMount: true,
   })
   console.log(`cat2Options (for ${selectedCat1}):`, cat2Options)
 
@@ -36,6 +38,7 @@ export default function SearchPage() {
     queryKey: ['categories', 'small', selectedCat1, selectedCat2],
     queryFn: () => getSmallCategories(selectedCat1, selectedCat2),
     enabled: !!selectedCat1 && !!selectedCat2,
+    refetchOnMount: true,
   })
   console.log(`cat3Options (for ${selectedCat1} > ${selectedCat2}):`, cat3Options)
 

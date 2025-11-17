@@ -5,6 +5,10 @@ import traceback
 import gradio as gr
 import os
 from datetime import datetime
+import matplotlib
+matplotlib.use('Agg') # For non-GUI environments
+import matplotlib.pyplot as plt
+import uuid
 from ..data import festival_loader
 from .utils import get_season, summarize_negative_feedback, calculate_trend_metrics, generate_overall_summary, load_cached_analysis, save_analysis_to_cache, load_raw_cached_analysis, save_raw_analysis_to_cache
 from ..application.graph import app_llm_graph
@@ -571,7 +575,17 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
     final_category_df = pd.DataFrame(category_results)
     final_all_blogs_df = pd.concat(all_blog_posts_list, ignore_index=True) if all_blog_posts_list else pd.DataFrame()
 
-    # 카테고리 계절별 내용 기반 워드클라우드
+    # 카테고리 계절별 키워드 빈도수 워드클라우드 (블로그 내용 기반)
+    from ..infrastructure.reporting.wordclouds import create_keyword_frequency_wordcloud
+    category_keyword_wordclouds = {"봄": None, "여름": None, "가을": None, "겨울": None}
+    for season, pairs in agg_seasonal_aspect_pairs.items():
+        if season == "정보없음" or not pairs: continue
+        mask_path = os.path.abspath(os.path.join("assets", f"mask_{SEASON_EN_MAP.get(season)}.png"))
+        keyword_wc_path = create_keyword_frequency_wordcloud(pairs, group_name, season, mask_path=mask_path)
+        if keyword_wc_path:
+            category_keyword_wordclouds[season] = f"/images/{os.path.basename(keyword_wc_path)}"
+
+    # 카테고리 계절별 내용 기반 워드클라우드 (감성 분류)
     category_seasonal_word_clouds = {"봄": {}, "여름": {}, "가을": {}, "겨울": {}}
     for season, pairs in agg_seasonal_aspect_pairs.items():
         if season == "정보없음" or not pairs: continue
@@ -606,7 +620,8 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
         "category_overall_summary": category_overall_summary,
         "category_negative_summary": category_negative_summary,
         "category_seasonal_word_clouds": category_seasonal_word_clouds,
-        
+        "category_keyword_wordclouds": category_keyword_wordclouds,  # 블로그 기반 키워드 빈도수 워드클라우드
+
         # 신규 추가 데이터
         "all_scores": agg_all_scores,
         "satisfaction_counts": dict(category_satisfaction_counts),

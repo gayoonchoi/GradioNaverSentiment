@@ -86,9 +86,48 @@ export interface CategoryAnalysisResponse {
   category: string;
   total_festivals: number;
   analyzed_festivals: number;
-  overall_summary: any[];
   individual_results: any[];
   seasonal_data: SeasonalData;
+  
+  // Comprehensive analysis fields
+  total_pos: number;
+  total_neg: number;
+  avg_satisfaction: number;
+  satisfaction_counts: SatisfactionCounts;
+  distribution_interpretation: string;
+  all_scores: number[];
+  outliers: number[];
+  seasonal_word_clouds?: {
+    봄?: { positive?: string; negative?: string };
+    여름?: { positive?: string; negative?: string };
+    가을?: { positive?: string; negative?: string };
+    겨울?: { positive?: string; negative?: string };
+  };
+  category_overall_summary: string;
+  category_negative_summary: string;
+  trend_graph?: string;
+  focused_trend_graph?: string;
+}
+
+export interface SeasonalFestival {
+  순위: number;
+  축제명: string;
+  '최대 검색량': number;
+  '평균 검색량': number;
+  '행사 시작일': string;
+  '행사 종료일': string;
+  cat1: string;
+  cat2: string;
+  cat3: string;
+}
+
+export interface SeasonalTrendsResponse {
+  status: string;
+  season: string;
+  wordcloud_url: string;
+  timeline_url: string;
+  top_festivals: SeasonalFestival[];
+  festival_names: string[];
 }
 
 export interface ComparisonResponse {
@@ -100,9 +139,52 @@ export interface ComparisonResponse {
   comparison_summary: string;
 }
 
+export interface CategoryComparisonResponse {
+  status: string;
+  category_a: string;
+  category_b: string;
+  results_a: {
+    total_festivals: number;
+    analyzed_festivals: number;
+    total_pos: number;
+    total_neg: number;
+    avg_satisfaction: number;
+    satisfaction_counts: SatisfactionCounts;
+    seasonal_data: SeasonalData;
+    category_overall_summary: string;
+    distribution_interpretation: string;
+  };
+  results_b: {
+    total_festivals: number;
+    analyzed_festivals: number;
+    total_pos: number;
+    total_neg: number;
+    avg_satisfaction: number;
+    satisfaction_counts: SatisfactionCounts;
+    seasonal_data: SeasonalData;
+    category_overall_summary: string;
+    distribution_interpretation: string;
+  };
+  comparison_summary: string;
+}
+
 export interface Festival {
   name: string;
   cat1: string;
   cat2: string;
   cat3: string;
+}
+
+// AI 추천 분석 관련 타입
+export interface RecommendationResponse {
+  status: string;
+  keyword?: string;
+  category?: string;
+  keyword_a?: string;
+  keyword_b?: string;
+  category_a?: string;
+  category_b?: string;
+  region: string;
+  season: string;
+  recommendation: string;
 }

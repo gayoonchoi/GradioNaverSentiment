@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { analyzeKeyword } from '../lib/api'
+import { analyzeKeyword, getRecommendationForSingle } from '../lib/api'
 import SatisfactionChart from '../components/charts/SatisfactionChart'
 import OutlierChart from '../components/charts/OutlierChart'
 import AbsoluteScoreChart from '../components/charts/AbsoluteScoreChart'
@@ -19,10 +20,22 @@ export default function AnalysisPage() {
   const [searchParams] = useSearchParams()
   const numReviews = Number(searchParams.get('reviews')) || 10
 
+  // AI 추천 분석 상태
+  const [region, setRegion] = useState('')
+  const [season, setSeason] = useState('')
+  const [enableRecommendation, setEnableRecommendation] = useState(false)
+
   const { data, isLoading, error } = useQuery({
     queryKey: ['analysis', keyword, numReviews],
     queryFn: () => analyzeKeyword(keyword, numReviews),
     enabled: !!keyword,
+    refetchOnMount: true,
+  })
+
+  const { data: recommendationData, isLoading: isRecommendationLoading, error: recommendationError } = useQuery({
+    queryKey: ['recommendation', keyword, numReviews, region, season],
+    queryFn: () => getRecommendationForSingle(keyword, numReviews, region, season),
+    enabled: enableRecommendation && !!region && !!season,
   })
 
   if (isLoading) {
@@ -380,6 +393,89 @@ export default function AnalysisPage() {
       <div className="bg-white rounded-xl shadow-md p-6">
         <h2 className="text-2xl font-bold mb-4">개별 블로그 분석 결과</h2>
         <BlogTable blogs={data.blog_results} pageSize={5} />
+      </div>
+
+      {/* AI 총합 분석 추천 */}
+      <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl shadow-md p-6">
+        <h2 className="text-2xl font-bold mb-4">🤖 AI 총합 분석 추천</h2>
+        <p className="text-gray-600 mb-6">
+          지역과 계절을 입력하면 AI가 해당 조건에서 이 축제의 성공 가능성과 기획 방향을 분석해드립니다.
+        </p>
+
+        {/* 입력 폼 */}
+        <div className="bg-white rounded-lg p-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                지역 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="예: 서울, 부산, 제주"
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                계절 <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={season}
+                onChange={(e) => setSeason(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              >
+                <option value="">선택하세요</option>
+                <option value="봄">봄</option>
+                <option value="여름">여름</option>
+                <option value="가을">가을</option>
+                <option value="겨울">겨울</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={() => setEnableRecommendation(true)}
+                disabled={!region || !season || isRecommendationLoading}
+                className="w-full px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-pink-700 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed transition"
+              >
+                {isRecommendationLoading ? 'AI 분석 중...' : 'AI 추천 분석 시작'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 추천 결과 표시 */}
+        {isRecommendationLoading && (
+          <div className="bg-white rounded-lg p-8 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">AI가 분석 중입니다...</p>
+          </div>
+        )}
+
+        {recommendationError && (
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+            <p className="text-red-700">
+              추천 분석 중 오류가 발생했습니다: {(recommendationError as Error).message}
+            </p>
+          </div>
+        )}
+
+        {recommendationData && !isRecommendationLoading && (
+          <div className="bg-white rounded-lg p-6">
+            <div className="mb-4 flex items-center space-x-2 text-sm text-gray-600">
+              <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full font-semibold">
+                {recommendationData.region}
+              </span>
+              <span className="px-3 py-1 bg-pink-100 text-pink-700 rounded-full font-semibold">
+                {recommendationData.season}
+              </span>
+            </div>
+            <div className="prose prose-lg max-w-none">
+              <ReactMarkdown>{recommendationData.recommendation}</ReactMarkdown>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

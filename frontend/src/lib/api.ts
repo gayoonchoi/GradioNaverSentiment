@@ -3,6 +3,9 @@ import type {
   KeywordAnalysisResponse,
   CategoryAnalysisResponse,
   ComparisonResponse,
+  CategoryComparisonResponse,
+  SeasonalTrendsResponse,
+  RecommendationResponse,
 } from '../types';
 
 const api = axios.create({
@@ -88,23 +91,28 @@ export const analyzeComparison = async (
   return data;
 };
 
-// 계절별 트렌드 API
-export interface SeasonalTrendResponse {
-  status: string;
-  season: string;
-  wordcloud_url: string;
-  timeline_url: string;
-  top_festivals: {
-    순위: number;
-    축제명: string;
-    '최대 검색량': number;
-    '평균 검색량': number;
-    '행사 시작일': string;
-    '행사 종료일': string;
-  }[];
-  festival_names: string[];
-}
+export const analyzeCategoryComparison = async (
+  cat1A: string,
+  cat2A: string,
+  cat3A: string,
+  cat1B: string,
+  cat2B: string,
+  cat3B: string,
+  numReviews: number = 10
+): Promise<CategoryComparisonResponse> => {
+  const { data } = await api.post('/analyze/category-comparison', {
+    cat1_a: cat1A,
+    cat2_a: cat2A,
+    cat3_a: cat3A,
+    cat1_b: cat1B,
+    cat2_b: cat2B,
+    cat3_b: cat3B,
+    num_reviews: numReviews,
+  });
+  return data;
+};
 
+// 계절별 트렌드 API
 export interface FestivalTrendResponse {
   status: string;
   festival_name: string;
@@ -113,7 +121,7 @@ export interface FestivalTrendResponse {
 
 export const getSeasonalTrends = async (
   season: string
-): Promise<SeasonalTrendResponse> => {
+): Promise<SeasonalTrendsResponse> => {
   const { data } = await api.get('/seasonal/analyze', {
     params: { season },
   });
@@ -126,6 +134,83 @@ export const getFestivalTrend = async (
 ): Promise<FestivalTrendResponse> => {
   const { data } = await api.get('/seasonal/festival-trend', {
     params: { festival_name: festivalName, season },
+  });
+  return data;
+};
+
+// AI 추천 분석 API
+export const getRecommendationForSingle = async (
+  keyword: string,
+  numReviews: number,
+  region: string,
+  season: string
+): Promise<RecommendationResponse> => {
+  const { data } = await api.post('/recommend/single', {
+    keyword,
+    num_reviews: numReviews,
+    region,
+    season,
+  });
+  return data;
+};
+
+export const getRecommendationForCategory = async (
+  cat1: string,
+  cat2: string,
+  cat3: string,
+  numReviews: number,
+  region: string,
+  season: string
+): Promise<RecommendationResponse> => {
+  const { data } = await api.post('/recommend/category', {
+    cat1,
+    cat2,
+    cat3,
+    num_reviews: numReviews,
+    region,
+    season,
+  });
+  return data;
+};
+
+export const getRecommendationForComparison = async (
+  keywordA: string,
+  keywordB: string,
+  numReviews: number,
+  region: string,
+  season: string
+): Promise<RecommendationResponse> => {
+  const { data } = await api.post('/recommend/comparison', {
+    keyword_a: keywordA,
+    keyword_b: keywordB,
+    num_reviews: numReviews,
+    region,
+    season,
+  });
+  return data;
+};
+
+export const getRecommendationForCategoryComparison = async (
+  cat1A: string,
+  cat2A: string,
+  cat3A: string,
+  cat1B: string,
+  cat2B: string,
+  cat3B: string,
+  numReviews: number,
+  region: string,
+  season: string
+): Promise<RecommendationResponse> => {
+  const { data } = await api.post('/recommend/category-comparison', {
+    cat1_a: cat1A,
+    cat2_a: cat2A,
+    cat3_a: cat3A,
+    cat1_b: cat1B,
+    cat2_b: cat2B,
+    cat3_b: cat3B,
+    num_reviews: numReviews,
+    region,
+    season,
   });
   return data;
 };

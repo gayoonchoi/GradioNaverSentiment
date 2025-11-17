@@ -9,7 +9,6 @@ import {
   ReferenceLine,
   Cell,
 } from 'recharts';
-import ReactMarkdown from 'react-markdown';
 import { BlogResult } from '../../types';
 
 interface SentenceScoreChartProps {
@@ -42,7 +41,7 @@ const SentenceScoreChart: React.FC<SentenceScoreChartProps> = ({ judgments }) =>
   };
 
   // Custom Tooltip to show full sentence
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({ active, payload}: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
