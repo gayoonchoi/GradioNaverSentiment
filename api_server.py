@@ -29,7 +29,7 @@ from src.data.festival_loader import (
     get_cat3_choices,
     get_festivals
 )
-from src.application.utils import create_driver
+from src.application.utils import create_driver, load_cached_analysis, save_analysis_to_cache
 from src.application import seasonal_analysis
 from src.infrastructure.reporting import seasonal_wordcloud
 
@@ -54,6 +54,76 @@ app.add_middleware(
 
 # 전역 WebDriver (재사용)
 driver = None
+
+# 캐싱을 지원하는 분석 헬퍼 함수
+def analyze_with_cache(keyword: str, num_reviews: int, log_details: bool = True, progress_desc: str = "분석") -> dict:
+    """캐싱을 지원하는 키워드 분석 함수"""
+    global driver
+
+    # 1. 캐시 확인
+    cached_results = load_cached_analysis(keyword, num_reviews)
+    if cached_results:
+        print(f"[CACHE HIT] 캐시된 결과 사용: {keyword}")
+        return cached_results
+
+    # 2. 캐시가 없으면 새로운 분석 실행
+    print(f"[CACHE MISS] 새로운 분석 실행: {keyword}")
+    if not driver:
+        driver = create_driver()
+
+    class DummyProgress:
+        def __call__(self, *args, **kwargs):
+            pass
+
+    progress = DummyProgress()
+
+    results = analyze_single_keyword_fully(
+        keyword=keyword,
+        num_reviews=num_reviews,
+        driver=driver,
+        log_details=log_details,
+        progress=progress,
+        progress_desc=progress_desc
+    )
+
+    if "error" in results:
+        return results
+
+    # 3. API 응답 형식으로 변환
+    response = {
+        "status": results.get("status", "분석 완료"),
+        "keyword": keyword,
+        "total_pos": results.get("total_pos", 0),
+        "total_neg": results.get("total_neg", 0),
+        "avg_satisfaction": results.get("avg_satisfaction", 3.0),
+        "satisfaction_counts": results.get("satisfaction_counts", {}),
+        "distribution_interpretation": results.get("distribution_interpretation", ""),
+        "all_scores": results.get("all_scores", []),
+        "outliers": results.get("outliers", []),
+        "seasonal_data": results.get("seasonal_data", {}),
+        "blog_results": results.get("blog_results_df", {}).to_dict('records') if hasattr(results.get("blog_results_df"), 'to_dict') else [],
+        "negative_summary": results.get("negative_summary", ""),
+        "overall_summary": results.get("overall_summary", ""),
+        "trend_metrics": results.get("trend_metrics", {}),
+        "url_markdown": results.get("url_markdown", ""),
+        "trend_graph": results.get("trend_graph"),
+        "focused_trend_graph": results.get("focused_trend_graph"),
+        "seasonal_word_clouds": results.get("seasonal_word_clouds"),
+        "addr1": results.get("addr1", "N/A"),
+        "addr2": results.get("addr2", "N/A"),
+        "areaCode": results.get("areaCode", "N/A"),
+        "eventStartDate": results.get("festival_start_date").strftime('%Y-%m-%d') if results.get("festival_start_date") else "N/A",
+        "eventEndDate": results.get("festival_end_date").strftime('%Y-%m-%d') if results.get("festival_end_date") else "N/A",
+        "eventPeriod": results.get("event_period", "N/A"),
+        "sentiment_score": results.get("total_sentiment_score", 0),
+        "satisfaction_delta": results.get("satisfaction_delta", 0),
+        "emotion_keyword_freq": results.get("emotion_keyword_freq", {})
+    }
+
+    # 4. 캐시에 저장
+    save_analysis_to_cache(keyword, num_reviews, response)
+
+    return response
 
 @app.on_event("startup")
 async def startup_event():
@@ -153,68 +223,25 @@ async def analyze_keyword(request: KeywordAnalysisRequest):
         - blog_results: 개별 블로그 분석 결과
         - seasonal_data: 계절별 데이터
     """
-    global driver
-    if not driver:
-        driver = create_driver()
-
     try:
         print(f"📊 분석 시작: {request.keyword}, {request.num_reviews}개 리뷰")
 
-        # 프로그레스 없이 직접 호출
-        class DummyProgress:
-            def __call__(self, *args, **kwargs):
-                pass
-
-        progress = DummyProgress()
-
-        # analysis_logic.py의 함수 직접 호출
-        results = analyze_single_keyword_fully(
+        # 캐싱을 지원하는 분석 수행
+        response = analyze_with_cache(
             keyword=request.keyword,
             num_reviews=request.num_reviews,
-            driver=driver,
             log_details=request.log_details,
-            progress=progress,
             progress_desc="API 분석"
         )
 
-        if "error" in results:
-            raise HTTPException(status_code=400, detail=results["error"])
-
-        # 결과를 API 응답 형식으로 변환
-        response = {
-            "status": results.get("status", "분석 완료"),
-            "keyword": request.keyword,
-            "total_pos": results.get("total_pos", 0),
-            "total_neg": results.get("total_neg", 0),
-            "avg_satisfaction": results.get("avg_satisfaction", 3.0),
-            "satisfaction_counts": results.get("satisfaction_counts", {}),
-            "distribution_interpretation": results.get("distribution_interpretation", ""),
-            "all_scores": results.get("all_scores", []),
-            "outliers": results.get("outliers", []),
-            "seasonal_data": results.get("seasonal_data", {}),
-            "blog_results": results.get("blog_results_df", {}).to_dict('records') if hasattr(results.get("blog_results_df"), 'to_dict') else [],
-            "negative_summary": results.get("negative_summary", ""),
-            "overall_summary": results.get("overall_summary", ""),
-            "trend_metrics": results.get("trend_metrics", {}),
-            "url_markdown": results.get("url_markdown", ""),
-            "trend_graph": results.get("trend_graph"),
-            "focused_trend_graph": results.get("focused_trend_graph"),
-            "seasonal_word_clouds": results.get("seasonal_word_clouds"),
-            # 상세 정보 테이블용 데이터 추가
-            "addr1": results.get("addr1", "N/A"),
-            "addr2": results.get("addr2", "N/A"),
-            "areaCode": results.get("areaCode", "N/A"),
-            "eventStartDate": results.get("festival_start_date").strftime('%Y-%m-%d') if results.get("festival_start_date") else "N/A",
-            "eventEndDate": results.get("festival_end_date").strftime('%Y-%m-%d') if results.get("festival_end_date") else "N/A",
-            "eventPeriod": results.get("event_period", "N/A"),
-            "sentiment_score": results.get("total_sentiment_score", 0),
-            "satisfaction_delta": results.get("satisfaction_delta", 0),
-            "emotion_keyword_freq": results.get("emotion_keyword_freq", {})
-        }
+        if "error" in response:
+            raise HTTPException(status_code=400, detail=response["error"])
 
         print(f"[OK] 분석 완료: {request.keyword}")
         return response
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[ERROR] 분석 중 오류: {e}")
         traceback.print_exc()
@@ -260,9 +287,14 @@ async def analyze_category(request: CategoryAnalysisRequest):
             "category": f"{request.cat1} > {request.cat2} > {request.cat3}",
             "total_festivals": results.get("total_festivals", 0),
             "analyzed_festivals": results.get("analyzed_festivals", 0),
+            "total_pos": results.get("total_pos", 0),
+            "total_neg": results.get("total_neg", 0),
             "overall_summary": results.get("overall_summary_df", {}).to_dict('records') if hasattr(results.get("overall_summary_df"), 'to_dict') else [],
             "individual_results": results.get("individual_festival_results_df", {}).to_dict('records') if hasattr(results.get("individual_festival_results_df"), 'to_dict') else [],
             "seasonal_data": results.get("seasonal_data", {}),
+            "category_overall_summary": results.get("category_overall_summary", ""),
+            "category_negative_summary": results.get("category_negative_summary", ""),
+            "seasonal_word_clouds": results.get("category_seasonal_word_clouds", {}),
         }
 
         print(f"[OK] 카테고리 분석 완료")
@@ -278,35 +310,21 @@ async def analyze_comparison(request: ComparisonRequest):
     """
     2개 키워드 비교 분석
     """
-    global driver
-    if not driver:
-        driver = create_driver()
-
     try:
         print(f"📊 비교 분석 시작: {request.keyword_a} vs {request.keyword_b}")
 
-        class DummyProgress:
-            def __call__(self, *args, **kwargs):
-                pass
-
-        progress = DummyProgress()
-
-        # 두 키워드를 각각 분석
-        results_a = analyze_single_keyword_fully(
+        # 두 키워드를 각각 캐싱 지원 분석 수행
+        results_a = analyze_with_cache(
             keyword=request.keyword_a,
             num_reviews=request.num_reviews,
-            driver=driver,
             log_details=True,
-            progress=progress,
             progress_desc="비교(A)"
         )
 
-        results_b = analyze_single_keyword_fully(
+        results_b = analyze_with_cache(
             keyword=request.keyword_b,
             num_reviews=request.num_reviews,
-            driver=driver,
             log_details=True,
-            progress=progress,
             progress_desc="비교(B)"
         )
 

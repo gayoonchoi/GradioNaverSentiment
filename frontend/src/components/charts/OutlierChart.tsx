@@ -38,8 +38,8 @@ export default function OutlierChart({ scores }: OutlierChartProps) {
 
   return (
     <div>
-      <ResponsiveContainer width="100%" height={250}>
-        <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+      <ResponsiveContainer width="100%" height={280}>
+        <ScatterChart margin={{ top: 30, right: 50, bottom: 30, left: 30 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis type="number" dataKey="x" hide />
           <YAxis

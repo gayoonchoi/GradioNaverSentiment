@@ -6,7 +6,7 @@ import gradio as gr
 import os
 from datetime import datetime
 from ..data import festival_loader
-from .utils import get_season, summarize_negative_feedback, calculate_trend_metrics, generate_overall_summary
+from .utils import get_season, summarize_negative_feedback, calculate_trend_metrics, generate_overall_summary, load_cached_analysis, save_analysis_to_cache, load_raw_cached_analysis, save_raw_analysis_to_cache
 from ..application.graph import app_llm_graph
 from ..infrastructure.web.naver_api import search_naver_blog_page
 from ..infrastructure.web.scraper import scrape_blog_content
@@ -25,6 +25,11 @@ SEASON_EN_MAP = {
 }
 
 def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_details: bool, progress: gr.Progress, progress_desc: str):
+    # 캐시 확인
+    cached_result = load_raw_cached_analysis(keyword, num_reviews)
+    if cached_result:
+        return cached_result
+
     # TourAPI에서 축제 기간 가져오기
     start_date_str, end_date_str = get_festival_period(keyword)
     event_period = None
@@ -84,28 +89,47 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
     valid_blogs_data = []
     num_candidates_to_process = len(candidate_blogs)
     initial_progress = 0.2
-    
+
+    # 연속 검증 실패 카운터 추가
+    consecutive_failures = 0
+    max_consecutive_failures = 15  # 연속으로 15번 실패하면 조기 종료
+
     for i, blog_data in enumerate(candidate_blogs):
         if len(valid_blogs_data) >= num_reviews: break
+
+        # 연속 실패가 너무 많으면 조기 종료
+        if consecutive_failures >= max_consecutive_failures:
+            print(f"⚠️ [{keyword}] 연속 {max_consecutive_failures}번 검증 실패로 분석 중단. (유효 블로그 {len(valid_blogs_data)}개 수집)")
+            break
+
         progress(initial_progress + (i + 1) / num_candidates_to_process * 0.8, desc=f"[{progress_desc}] {keyword} 분석 중... ({len(valid_blogs_data)}/{num_reviews} 완료, {i+1}/{num_candidates_to_process} 확인)")
 
         try:
             content = scrape_blog_content(driver, blog_data["link"])
-            if not content or "오류" in content or "찾을 수 없습니다" in content: continue
+            if not content or "오류" in content or "찾을 수 없습니다" in content:
+                consecutive_failures += 1
+                continue
 
             max_content_length = 30000
             if len(content) > max_content_length:
                 content = content[:max_content_length] + "... (내용 일부 생략)"
 
             final_state = app_llm_graph.invoke({
-                "original_text": content, "keyword": keyword, "title": blog_data["title"], 
+                "original_text": content, "keyword": keyword, "title": blog_data["title"],
                 "log_details": log_details, "re_summarize_count": 0, "is_relevant": False
             })
 
-            if not final_state or not final_state.get("is_relevant"): continue
+            if not final_state or not final_state.get("is_relevant"):
+                consecutive_failures += 1
+                continue
+
+            # 검증 성공 시 카운터 리셋
+            consecutive_failures = 0
 
             judgments = final_state.get("final_judgments", [])
-            if not judgments: continue
+            if not judgments:
+                consecutive_failures += 1  # 판정 결과가 없어도 실패로 간주
+                continue
 
             # 감성어 추출 로직 보강
             all_sentiment_words = set(knowledge_base.adjectives.keys()) | \
@@ -171,6 +195,7 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
         except Exception as e:
             print(f"블로그 분석 중 오류 ({keyword}, {blog_data.get('link', 'N/A')}): {e}")
             traceback.print_exc()
+            consecutive_failures += 1  # 예외 발생도 실패로 간주
             continue
 
     if not valid_blogs_data: return {"error": f"'{keyword}'에 대한 유효한 후기 블로그를 찾지 못했습니다 (후보 {len(candidate_blogs)}개 확인)."}
@@ -198,16 +223,8 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
     satisfaction_counts = Counter([level_map.get(level, "보통") for level in all_satisfaction_levels])
     avg_satisfaction = np.mean(all_satisfaction_levels) if all_satisfaction_levels else 3.0
 
-    # LLM을 사용한 분포 해석 생성
+    # LLM을 사용한 분포 해석 생성 (트렌드 메트릭 계산 후에 수행하기 위해 여기서는 초기화만)
     distribution_interpretation = ""
-    if all_satisfaction_levels:
-        try:
-            distribution_interpretation = generate_distribution_interpretation(
-                satisfaction_counts, len(all_satisfaction_levels), boundaries, avg_satisfaction
-            )
-        except Exception as e:
-            print(f"만족도 분포 해석 생성 중 오류: {e}")
-            distribution_interpretation = f"평균 만족도: {avg_satisfaction:.2f} / 5.0"
 
     # blog_results_list 업데이트 (만족도 레벨 포함)
     for i, blog_result in enumerate(blog_results_list):
@@ -242,6 +259,18 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
     # (감성점수 - 중립값) / 트렌드지수 * 100으로 계산
     trend_index = trend_metrics.get("trend_index", 0)
     satisfaction_delta = ((total_sentiment_score - 50) / (trend_index + 1e-6)) * 100 if trend_index > 0 else (total_sentiment_score - 50)
+
+    # LLM을 사용한 종합 분포 해석 생성 (6개 차트 모두 포함)
+    if all_satisfaction_levels:
+        try:
+            distribution_interpretation = generate_distribution_interpretation(
+                satisfaction_counts, len(all_satisfaction_levels), boundaries, avg_satisfaction,
+                all_scores=all_scores, outliers=outliers, total_pos=total_pos, total_neg=total_neg,
+                trend_metrics=trend_metrics
+            )
+        except Exception as e:
+            print(f"만족도 분포 해석 생성 중 오류: {e}")
+            distribution_interpretation = f"평균 만족도: {avg_satisfaction:.2f} / 5.0"
 
     emotion_keyword_freq = Counter(emotion_keywords)
 
@@ -288,8 +317,8 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
     }
     overall_summary = generate_overall_summary(temp_results)
 
-
-    return {
+    # 결과 딕셔너리 생성
+    results = {
         "status": f"총 {total_searched}개 검색, {len(candidate_blogs)}개 후보 중 {len(valid_blogs_data)}개 블로그 최종 분석 완료.",
         "total_pos": total_pos, "total_neg": total_neg, "total_strong_pos": total_strong_pos, "total_strong_neg": total_strong_neg,
         "total_sentiment_frequency": total_sentiment_frequency, "total_sentiment_score": total_sentiment_score,
@@ -321,8 +350,14 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
         "satisfaction_boundaries": boundaries,
         "outliers": outliers,
         "seasonal_texts": {k: "\n".join(v) for k, v in seasonal_texts.items()},
-        "seasonal_aspect_pairs": seasonal_aspect_pairs
+        "seasonal_aspect_pairs": seasonal_aspect_pairs,
+        "negative_sentences": all_negative_sentences  # 부정 문장 리스트도 캐시에 포함
     }
+
+    # 캐시에 저장
+    save_raw_analysis_to_cache(keyword, num_reviews, results)
+
+    return results
 
 # 핵심 분석 로직을 담는 새 함수
 from ..infrastructure.reporting.wordclouds import create_seasonal_trend_wordcloud
@@ -438,12 +473,57 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
     final_category_df = pd.DataFrame(category_results)
     final_all_blogs_df = pd.concat(all_blog_posts_list, ignore_index=True) if all_blog_posts_list else pd.DataFrame()
 
+    # 카테고리 계절별 워드클라우드 생성
+    category_seasonal_word_clouds = {"봄": {}, "여름": {}, "가을": {}, "겨울": {}}
+    SEASON_MASK_MAP = {
+        "봄": "spring",
+        "여름": "summer",
+        "가을": "fall",
+        "겨울": "winter"
+    }
+    for season, pairs in agg_seasonal_aspect_pairs.items():
+        if season == "정보없음" or not pairs:
+            continue
+
+        season_en = SEASON_MASK_MAP.get(season)
+        mask_path = None
+        if season_en:
+            mask_path = os.path.abspath(os.path.join("assets", f"mask_{season_en}.png"))
+
+        pos_wc_path, neg_wc_path = create_sentiment_wordclouds(pairs, f"{group_name}_{season}", mask_path=mask_path)
+
+        if pos_wc_path:
+            category_seasonal_word_clouds[season]['positive'] = f"/images/{os.path.basename(pos_wc_path)}"
+        if neg_wc_path:
+            category_seasonal_word_clouds[season]['negative'] = f"/images/{os.path.basename(neg_wc_path)}"
+
+    # 카테고리 종합 평가 생성
+    category_negative_summary = ""
+    category_overall_summary = ""
+
+    if agg_negative_sentences:
+        category_negative_summary = summarize_negative_feedback(agg_negative_sentences)
+
+    # 종합 평가용 임시 결과 객체
+    if analyzed_festivals_count > 0:
+        category_temp_results = {
+            "keyword": group_name,
+            "total_pos": agg_pos,
+            "total_neg": agg_neg,
+            "trend_metrics": {"trend_index": 0},  # 카테고리에는 트렌드 지표가 없으므로 0으로 설정
+            "distribution_interpretation": f"{group_name} 카테고리 내 {analyzed_festivals_count}개 축제를 종합 분석한 결과입니다.",
+            "negative_summary": category_negative_summary
+        }
+        category_overall_summary = generate_overall_summary(category_temp_results)
+
     if os.environ.get("LOG_DEBUG") == "true":
         print(f"[DEBUG][CategoryAnalysis] Final total_festivals: {total_festivals}, analyzed_festivals_count: {analyzed_festivals_count}")
 
     return {
         "status": f"총 {total_festivals}개 축제 요청 중 {len(category_results)}개 분석 완료.",
-        "total_pos": agg_pos, "total_neg": agg_neg, 
+        "total_festivals": total_festivals,
+        "analyzed_festivals": analyzed_festivals_count,
+        "total_pos": agg_pos, "total_neg": agg_neg,
         "total_sentiment_frequency": total_sentiment_frequency,
         "total_sentiment_score": total_sentiment_score,
         "theme_sentiment_avg": theme_sentiment_avg,
@@ -454,8 +534,11 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
         "seasonal_trend_wc_paths": seasonal_trend_wc_paths, # 워드클라우드 경로 추가
         "individual_festival_results_df": final_category_df,
         "all_blog_posts_df": final_all_blogs_df,
-        "festival_full_results": festival_full_results, 
-        "all_blog_judgments": [j for res in festival_full_results for j in res.get("blog_judgments", [])]
+        "festival_full_results": festival_full_results,
+        "all_blog_judgments": [j for res in festival_full_results for j in res.get("blog_judgments", [])],
+        "category_overall_summary": category_overall_summary,  # 카테고리 종합 평가
+        "category_negative_summary": category_negative_summary,  # 카테고리 주요 불만 사항
+        "category_seasonal_word_clouds": category_seasonal_word_clouds  # 카테고리 계절별 워드클라우드
     }
 
 # 기존 함수는 새로 만든 그룹 분석 함수를 호출하는 래퍼(wrapper)가 됨

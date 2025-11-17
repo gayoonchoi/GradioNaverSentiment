@@ -3,7 +3,9 @@ import os
 import pandas as pd
 import re
 import math
-from datetime import datetime
+import json
+import hashlib
+from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -12,6 +14,137 @@ import traceback
 from ..infrastructure.llm_client import get_llm_client # 상대 경로 임포트 수정
 
 PAGE_SIZE = 10
+
+# 캐시 설정
+CACHE_DIR = "cache"
+CACHE_EXPIRY_DAYS = 30  # 캐시 만료 기간 (일)
+
+def get_cache_key(keyword: str, num_reviews: int) -> str:
+    """키워드와 리뷰 개수로 캐시 키 생성"""
+    key_str = f"{keyword}_{num_reviews}"
+    return hashlib.md5(key_str.encode('utf-8')).hexdigest()
+
+def get_cache_path(cache_key: str) -> str:
+    """캐시 파일 경로 반환"""
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    return os.path.join(CACHE_DIR, f"{cache_key}.json")
+
+def is_cache_valid(cache_path: str) -> bool:
+    """캐시 파일이 유효한지 확인 (존재 여부 및 만료 기간)"""
+    if not os.path.exists(cache_path):
+        return False
+
+    # 캐시 파일 수정 시간 확인
+    file_mtime = datetime.fromtimestamp(os.path.getmtime(cache_path))
+    expiry_date = datetime.now() - timedelta(days=CACHE_EXPIRY_DAYS)
+
+    return file_mtime > expiry_date
+
+def load_cached_analysis(keyword: str, num_reviews: int) -> dict:
+    """캐시된 분석 결과 로드"""
+    try:
+        cache_key = get_cache_key(keyword, num_reviews)
+        cache_path = get_cache_path(cache_key)
+
+        if not is_cache_valid(cache_path):
+            return None
+
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            cached_data = json.load(f)
+            print(f"✅ 캐시된 분석 결과 사용: {keyword} (num_reviews={num_reviews})")
+            return cached_data
+    except Exception as e:
+        print(f"⚠️ 캐시 로드 실패: {e}")
+        return None
+
+def save_analysis_to_cache(keyword: str, num_reviews: int, results: dict) -> None:
+    """분석 결과를 캐시에 저장 (API 형식용)"""
+    try:
+        cache_key = get_cache_key(keyword, num_reviews)
+        cache_path = get_cache_path(cache_key)
+
+        # pandas DataFrame을 dict로 변환할 수 있도록 처리
+        cacheable_results = {}
+        for key, value in results.items():
+            if isinstance(value, pd.DataFrame):
+                cacheable_results[key] = value.to_dict('records')
+            elif isinstance(value, (datetime,)):
+                cacheable_results[key] = value.isoformat() if value else None
+            elif isinstance(value, (dict, list, str, int, float, bool, type(None))):
+                cacheable_results[key] = value
+            else:
+                # 직렬화할 수 없는 타입은 문자열로 변환
+                cacheable_results[key] = str(value)
+
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            json.dump(cacheable_results, f, ensure_ascii=False, indent=2)
+            print(f"💾 분석 결과 캐시 저장: {keyword} (num_reviews={num_reviews})")
+    except Exception as e:
+        print(f"⚠️ 캐시 저장 실패 (분석은 계속 진행됨): {e}")
+
+def save_raw_analysis_to_cache(keyword: str, num_reviews: int, results: dict) -> None:
+    """원본 분석 결과를 캐시에 저장 (내부 재사용용)"""
+    try:
+        cache_key = get_cache_key(keyword, num_reviews) + "_raw"
+        cache_path = get_cache_path(cache_key)
+
+        # pandas DataFrame과 datetime을 JSON 직렬화 가능하도록 변환
+        cacheable_results = {}
+        for key, value in results.items():
+            if isinstance(value, pd.DataFrame):
+                # DataFrame을 records 형식과 함께 columns 정보도 저장
+                cacheable_results[key] = {
+                    '_type': 'DataFrame',
+                    'data': value.to_dict('records'),
+                    'columns': list(value.columns)
+                }
+            elif isinstance(value, (datetime,)):
+                cacheable_results[key] = {
+                    '_type': 'datetime',
+                    'value': value.isoformat() if value else None
+                }
+            elif isinstance(value, (dict, list, str, int, float, bool, type(None))):
+                cacheable_results[key] = value
+            else:
+                # 직렬화할 수 없는 타입은 문자열로 변환
+                cacheable_results[key] = str(value)
+
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            json.dump(cacheable_results, f, ensure_ascii=False, indent=2)
+            print(f"💾 원본 분석 결과 캐시 저장: {keyword} (num_reviews={num_reviews})")
+    except Exception as e:
+        print(f"⚠️ 원본 캐시 저장 실패 (분석은 계속 진행됨): {e}")
+
+def load_raw_cached_analysis(keyword: str, num_reviews: int) -> dict:
+    """캐시된 원본 분석 결과 로드"""
+    try:
+        cache_key = get_cache_key(keyword, num_reviews) + "_raw"
+        cache_path = get_cache_path(cache_key)
+
+        if not is_cache_valid(cache_path):
+            return None
+
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            cached_data = json.load(f)
+
+            # DataFrame과 datetime 복원
+            restored_results = {}
+            for key, value in cached_data.items():
+                if isinstance(value, dict) and value.get('_type') == 'DataFrame':
+                    # DataFrame 복원
+                    restored_results[key] = pd.DataFrame(value['data'], columns=value['columns'])
+                elif isinstance(value, dict) and value.get('_type') == 'datetime':
+                    # datetime 복원
+                    restored_results[key] = datetime.fromisoformat(value['value']) if value['value'] else None
+                else:
+                    restored_results[key] = value
+
+            print(f"✅ 캐시된 원본 분석 결과 사용: {keyword} (num_reviews={num_reviews})")
+            return restored_results
+    except Exception as e:
+        print(f"⚠️ 원본 캐시 로드 실패: {e}")
+        traceback.print_exc()
+        return None
 
 def change_page(full_df, page_num):
     if not isinstance(full_df, pd.DataFrame) or full_df.empty:
@@ -325,18 +458,25 @@ def map_score_to_level(score: float, boundaries: dict) -> int:
     else:
         return 5  # 매우 만족
 
-def generate_distribution_interpretation(satisfaction_counts: dict, total_count: int, boundaries: dict, avg_satisfaction: float) -> str:
+def generate_distribution_interpretation(satisfaction_counts: dict, total_count: int, boundaries: dict, avg_satisfaction: float,
+                                        all_scores: list = None, outliers: list = None, total_pos: int = 0, total_neg: int = 0,
+                                        trend_metrics: dict = None) -> str:
     """
-    LLM을 사용하여 만족도 분포에 대한 자연어 해석을 생성합니다.
+    LLM을 사용하여 전체 차트 데이터(6개)를 종합 분석하여 자연어 해석을 생성합니다.
 
     Args:
         satisfaction_counts: {'매우 불만족': N, '불만족': N, ...} 형태의 카운트 딕셔너리
         total_count: 전체 문장 수
         boundaries: 만족도 경계값 딕셔너리
         avg_satisfaction: 평균 만족도 (1.0 ~ 5.0)
+        all_scores: 절대 점수 리스트 (옵션)
+        outliers: 이상치 리스트 (옵션)
+        total_pos: 긍정 문장 수 (옵션)
+        total_neg: 부정 문장 수 (옵션)
+        trend_metrics: 트렌드 지표 (옵션)
 
     Returns:
-        str: 마크다운 형식의 해석 텍스트
+        str: 마크다운 형식의 종합 해석 텍스트
     """
     try:
         llm = get_llm_client(model="gemini-2.5-pro")
@@ -346,31 +486,86 @@ def generate_distribution_interpretation(satisfaction_counts: dict, total_count:
         counts_str = "\n".join([f"- {label}: {satisfaction_counts.get(label, 0)}개 ({satisfaction_counts.get(label, 0) / total_count * 100:.1f}%)"
                                 for label in labels])
 
-        prompt = f"""다음은 축제 리뷰의 만족도 분포 데이터입니다:
+        # 1. 전체 긍정/부정 비율 데이터
+        total_sentiment = total_pos + total_neg if (total_pos or total_neg) else total_count
+        pos_ratio = (total_pos / total_sentiment * 100) if total_sentiment > 0 else 0
+        neg_ratio = (total_neg / total_sentiment * 100) if total_sentiment > 0 else 0
+
+        sentiment_ratio_str = f"""
+### 1. 전체 긍정/부정 비율
+- 긍정 문장: {total_pos}개 ({pos_ratio:.1f}%)
+- 부정 문장: {total_neg}개 ({neg_ratio:.1f}%)"""
+
+        # 2. 만족도 5단계 분포 데이터
+        satisfaction_dist_str = f"""
+### 2. 만족도 5단계 분포
+{counts_str}
+- 평균 만족도: {avg_satisfaction:.2f} / 5.0"""
+
+        # 3. 절대 점수 분포 데이터
+        score_dist_str = ""
+        if all_scores:
+            import numpy as np
+            min_score = np.min(all_scores)
+            max_score = np.max(all_scores)
+            median_score = np.median(all_scores)
+            score_dist_str = f"""
+### 3. 절대 점수 분포
+- 최소 점수: {min_score:.2f}
+- 최대 점수: {max_score:.2f}
+- 중간값: {median_score:.2f}
+- 평균: {boundaries.get('mean', 0):.2f}
+- 표준편차: {boundaries.get('std', 0):.2f}"""
+
+        # 4. 이상치 분석 데이터
+        outlier_str = ""
+        if outliers is not None:
+            outlier_ratio = (len(outliers) / total_count * 100) if total_count > 0 else 0
+            outlier_str = f"""
+### 4. 이상치 분석
+- 이상치 개수: {len(outliers)}개 (전체의 {outlier_ratio:.1f}%)
+- 해석: {'극단적인 의견이 다수 존재합니다.' if outlier_ratio > 10 else '대부분의 의견이 평균적인 범위 내에 있습니다.'}"""
+
+        # 5. 트렌드 분석 데이터
+        trend_str = ""
+        if trend_metrics:
+            trend_index = trend_metrics.get('trend_index', 0)
+            before_avg = trend_metrics.get('before_avg', 0)
+            during_avg = trend_metrics.get('during_avg', 0)
+            after_avg = trend_metrics.get('after_avg', 0)
+            trend_str = f"""
+### 5&6. 트렌드 분석 (집중 & 전체)
+- 축제 전 평균 검색량: {before_avg:.1f}
+- 축제 중 평균 검색량: {during_avg:.1f}
+- 축제 후 평균 검색량: {after_avg:.1f}
+- 트렌드 지수: {trend_index:.1f}% (100 이상이면 축제 기간 동안 관심도 증가)"""
+
+        prompt = f"""다음은 축제 리뷰의 종합 분석 데이터입니다. **6개의 차트 데이터를 모두 고려하여** 전문가 입장에서 종합적인 해석을 제공해주세요.
 
 **전체 리뷰 문장 수**: {total_count}개
-**평균 만족도**: {avg_satisfaction:.2f} / 5.0
+{sentiment_ratio_str}
+{satisfaction_dist_str}
+{score_dist_str}
+{outlier_str}
+{trend_str}
 
-**만족도 분포**:
-{counts_str}
+위의 **6가지 차트 데이터(긍정/부정 비율, 만족도 5단계, 절대 점수 분포, 이상치 분석, 트렌드 분석)를 모두 종합하여** 다음을 포함하는 **3-5문장**의 종합 해석을 작성해주세요:
 
-**통계 정보**:
-- 평균값: {boundaries.get('mean', 0):.2f}
-- 표준편차: {boundaries.get('std', 0):.2f}
+1. 전반적인 평가 경향 (긍정 vs 부정)
+2. 만족도 분포의 특징 (어느 구간에 집중되어 있는지)
+3. 감성 점수의 분포 특성 (극단적 vs 중립적)
+4. 이상치 존재 여부와 의미
+5. 트렌드 지수를 고려한 화제성 vs 만족도 관계
+6. 종합적인 축제 평가 및 시사점
 
-위 데이터를 바탕으로 **2-3문장**으로 만족도 분포를 해석해주세요.
-- 어느 만족도 구간이 가장 많은지
-- 전반적인 평가 경향은 어떠한지
-- 특이사항이 있다면 무엇인지
-
-간결하고 명확하게 작성해주세요."""
+간결하고 실용적인 인사이트를 제공해주세요."""
 
         response = llm.invoke(prompt)
         return response.content.strip()
     except Exception as e:
-        print(f"만족도 분포 해석 생성 중 오류: {e}")
+        print(f"종합 차트 해석 생성 중 오류: {e}")
         traceback.print_exc()
-        return f"평균 만족도는 {avg_satisfaction:.2f} / 5.0점입니다. 총 {total_count}개의 리뷰 문장이 분석되었습니다."
+        return f"평균 만족도는 {avg_satisfaction:.2f} / 5.0점입니다. 긍정 비율은 {(total_pos/(total_pos+total_neg)*100) if (total_pos+total_neg) > 0 else 0:.1f}%입니다."
 
 def generate_overall_summary(results: dict) -> str:
     """

@@ -14,13 +14,14 @@ import ExplanationToggle from '../components/common/ExplanationToggle' // Import
 import { explanations } from '../lib/explanations' // Import explanations
 
 export default function AnalysisPage() {
-  const { keyword } = useParams<{ keyword: string }>()
+  const { keyword: encodedKeyword } = useParams<{ keyword: string }>()
+  const keyword = encodedKeyword ? decodeURIComponent(encodedKeyword) : ''
   const [searchParams] = useSearchParams()
   const numReviews = Number(searchParams.get('reviews')) || 10
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['analysis', keyword, numReviews],
-    queryFn: () => analyzeKeyword(keyword!, numReviews),
+    queryFn: () => analyzeKeyword(keyword, numReviews),
     enabled: !!keyword,
   })
 
@@ -45,92 +46,117 @@ export default function AnalysisPage() {
       <div className="bg-white rounded-xl shadow-md p-6">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">{keyword}</h1>
         <p className="text-gray-600">{data.status}</p>
-        <div className="mt-4 flex items-center space-x-4">
-          <div className="bg-blue-50 px-4 py-2 rounded-lg">
+        <div className="mt-4 flex items-start space-x-4">
+          <div className="bg-blue-50 px-4 py-2 rounded-lg min-h-[80px] flex flex-col justify-center">
             <span className="text-sm text-gray-600">긍정</span>
             <p className="text-2xl font-bold text-blue-600">{data.total_pos}</p>
           </div>
-          <div className="bg-red-50 px-4 py-2 rounded-lg">
+          <div className="bg-red-50 px-4 py-2 rounded-lg min-h-[80px] flex flex-col justify-center">
             <span className="text-sm text-gray-600">부정</span>
             <p className="text-2xl font-bold text-red-600">{data.total_neg}</p>
           </div>
-          <div className="bg-green-50 px-4 py-2 rounded-lg">
+          <div className="bg-green-50 px-4 py-2 rounded-lg min-h-[80px] flex-1 flex flex-col">
             <span className="text-sm text-gray-600">평균 만족도</span>
             <p className="text-2xl font-bold text-green-600">
               {data.avg_satisfaction.toFixed(2)} / 5.0
             </p>
-            <ExplanationToggle
-              title={explanations.sentimentScore.title}
-              content={explanations.sentimentScore.content}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* 상세 정보 요약 */}
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">상세 정보 요약</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-          <div className="flex items-start space-x-2">
-            <span className="text-gray-500">📍</span>
-            <div>
-              <p className="font-semibold">주소</p>
-              <p className="text-gray-700">{data.addr1} {data.addr2}</p>
-            </div>
-          </div>
-          <div className="flex items-start space-x-2">
-            <span className="text-gray-500">🗓️</span>
-            <div>
-              <p className="font-semibold">축제 기간</p>
-              <p className="text-gray-700">{data.eventStartDate} ~ {data.eventEndDate} ({data.eventPeriod}일)</p>
-            </div>
-          </div>
-          <div className="flex items-start space-x-2">
-            <span className="text-gray-500">💯</span>
-            <div>
-              <p className="font-semibold">종합 감성 점수</p>
-              <p className="text-gray-700">{data.sentiment_score.toFixed(2)} / 100</p>
+            <div className="mt-1">
               <ExplanationToggle
                 title={explanations.sentimentScore.title}
                 content={explanations.sentimentScore.content}
               />
             </div>
           </div>
-          <div className="flex items-start space-x-2">
-            <span className="text-gray-500">📈</span>
-            <div>
-              <p className="font-semibold">트렌드 지수</p>
-              <p className="text-gray-700">{data.trend_metrics.trend_index}</p>
-              <ExplanationToggle
-                title={explanations.trendIndex.title}
-                content={explanations.trendIndex.content}
-              />
+        </div>
+      </div>
+
+      {/* 상세 정보 요약 */}
+      <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl shadow-md p-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-6">📋 상세 정보 요약</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition">
+            <div className="flex items-start space-x-3">
+              <span className="text-2xl">📍</span>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-gray-600 mb-1">주소</p>
+                <p className="text-base text-gray-800 leading-relaxed">{data.addr1} {data.addr2}</p>
+              </div>
             </div>
           </div>
-          <div className="flex items-start space-x-2">
-            <span className="text-gray-500">📊</span>
-            <div>
-              <p className="font-semibold">만족도 변화</p>
-              <p className="text-gray-700">{data.satisfaction_delta.toFixed(2)}</p>
-              <ExplanationToggle
-                title={explanations.satisfactionDelta.title}
-                content={explanations.satisfactionDelta.content}
-              />
+          <div className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition">
+            <div className="flex items-start space-x-3">
+              <span className="text-2xl">🗓️</span>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-gray-600 mb-1">축제 기간</p>
+                <p className="text-base text-gray-800 leading-relaxed">{data.eventStartDate} ~ {data.eventEndDate}</p>
+                <p className="text-sm text-primary font-semibold">({data.eventPeriod}일간)</p>
+              </div>
             </div>
           </div>
-          <div className="flex items-start space-x-2">
-            <span className="text-gray-500">🔑</span>
-            <div>
-              <p className="font-semibold">주요 감성어 (Top 3)</p>
-              <p className="text-gray-700">
-                {Object.keys(data.emotion_keyword_freq).length > 0
-                  ? Object.entries(data.emotion_keyword_freq).slice(0, 3).map(([key, value]) => `${key}(${value})`).join(', ')
-                  : '추출된 감성어 없음'}
-              </p>
-              <ExplanationToggle
-                title={explanations.emotionKeywordFreq.title}
-                content={explanations.emotionKeywordFreq.content}
-              />
+          <div className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition">
+            <div className="flex items-start space-x-3">
+              <span className="text-2xl">💯</span>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-gray-600 mb-1">종합 감성 점수</p>
+                <p className="text-xl font-bold text-green-600">{data.sentiment_score.toFixed(2)} / 100</p>
+                <div className="mt-2">
+                  <ExplanationToggle
+                    title={explanations.sentimentScore.title}
+                    content={explanations.sentimentScore.content}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition">
+            <div className="flex items-start space-x-3">
+              <span className="text-2xl">📈</span>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-gray-600 mb-1">트렌드 지수</p>
+                <p className="text-xl font-bold text-purple-600">{data.trend_metrics.trend_index.toFixed(2)}</p>
+                <div className="mt-2">
+                  <ExplanationToggle
+                    title={explanations.trendIndex.title}
+                    content={explanations.trendIndex.content}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition">
+            <div className="flex items-start space-x-3">
+              <span className="text-2xl">📊</span>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-gray-600 mb-1">만족도 변화</p>
+                <p className={`text-xl font-bold ${data.satisfaction_delta >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {data.satisfaction_delta >= 0 ? '+' : ''}{data.satisfaction_delta.toFixed(2)}
+                </p>
+                <div className="mt-2">
+                  <ExplanationToggle
+                    title={explanations.satisfactionDelta.title}
+                    content={explanations.satisfactionDelta.content}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition">
+            <div className="flex items-start space-x-3">
+              <span className="text-2xl">🔑</span>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-gray-600 mb-1">주요 감성어 (Top 3)</p>
+                <p className="text-base text-gray-800 leading-relaxed">
+                  {Object.keys(data.emotion_keyword_freq).length > 0
+                    ? Object.entries(data.emotion_keyword_freq).slice(0, 3).map(([key, value]) => `${key}(${value})`).join(', ')
+                    : '추출된 감성어 없음'}
+                </p>
+                <div className="mt-2">
+                  <ExplanationToggle
+                    title={explanations.emotionKeywordFreq.title}
+                    content={explanations.emotionKeywordFreq.content}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -138,11 +164,37 @@ export default function AnalysisPage() {
 
       {/* 총합 평가 */}
       {data.overall_summary && data.overall_summary.length > 0 && (
-        <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+        <div className="bg-white rounded-xl shadow-lg p-8 border-l-4 border-blue-500">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center">
+            <span className="text-3xl mr-2">📝</span>
             총합 평가
           </h2>
-          <div className="prose max-w-none">
+          <div className="prose prose-lg max-w-none leading-relaxed">
+            <style dangerouslySetInnerHTML={{__html: `
+              .prose h1, .prose h2, .prose h3, .prose h4 {
+                margin-top: 1.5em;
+                margin-bottom: 0.75em;
+                font-weight: 700;
+              }
+              .prose p {
+                margin-top: 0.75em;
+                margin-bottom: 0.75em;
+                line-height: 1.8;
+              }
+              .prose ol, .prose ul {
+                margin-top: 1em;
+                margin-bottom: 1em;
+              }
+              .prose li {
+                margin-top: 0.5em;
+                margin-bottom: 0.5em;
+                line-height: 1.7;
+              }
+              .prose strong {
+                color: #1e40af;
+                font-weight: 600;
+              }
+            `}} />
             <ReactMarkdown>{data.overall_summary}</ReactMarkdown>
           </div>
         </div>
@@ -162,11 +214,65 @@ export default function AnalysisPage() {
 
       {/* 주요 불만 사항 */}
       {data.negative_summary && data.negative_summary.length > 0 && (
-        <div className="bg-red-50 rounded-xl shadow-md p-6">
-          <h2 className="text-2xl font-bold text-red-800 mb-4">
+        <div className="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl shadow-lg p-8">
+          <h2 className="text-2xl font-bold text-red-800 mb-6 flex items-center">
+            <span className="text-3xl mr-2">⚠️</span>
             주요 불만 사항
           </h2>
-          <div className="prose max-w-none">
+          <div className="prose prose-lg max-w-none">
+            <style dangerouslySetInnerHTML={{__html: `
+              .prose h1, .prose h2, .prose h3, .prose h4 {
+                margin-top: 1.5em;
+                margin-bottom: 0.75em;
+                font-weight: 700;
+                color: #991b1b;
+              }
+              .prose p {
+                margin-top: 0.75em;
+                margin-bottom: 0.75em;
+                line-height: 1.8;
+              }
+              .prose ol {
+                counter-reset: item;
+                list-style-type: none;
+                padding-left: 0;
+              }
+              .prose ol > li {
+                counter-increment: item;
+                margin-top: 1em;
+                margin-bottom: 1em;
+                padding-left: 2.5em;
+                position: relative;
+                line-height: 1.8;
+              }
+              .prose ol > li::before {
+                content: counter(item) ".";
+                position: absolute;
+                left: 0;
+                top: 0;
+                font-weight: 700;
+                color: #dc2626;
+                font-size: 1.25em;
+                background: white;
+                width: 2em;
+                height: 2em;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+              }
+              .prose ul > li {
+                margin-top: 0.75em;
+                margin-bottom: 0.75em;
+                padding-left: 0.5em;
+                line-height: 1.8;
+              }
+              .prose strong {
+                color: #b91c1c;
+                font-weight: 600;
+              }
+            `}} />
             <ReactMarkdown>{data.negative_summary}</ReactMarkdown>
           </div>
         </div>
@@ -275,15 +381,6 @@ export default function AnalysisPage() {
         <h2 className="text-2xl font-bold mb-4">개별 블로그 분석 결과</h2>
         <BlogTable blogs={data.blog_results} pageSize={5} />
       </div>
-
-      {/* URL 목록 */}
-      {data.url_markdown && data.url_markdown.length > 0 && (
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <div className="prose max-w-none">
-            <ReactMarkdown>{data.url_markdown}</ReactMarkdown>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

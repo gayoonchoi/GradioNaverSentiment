@@ -274,12 +274,14 @@ export default function SeasonalTrendPage() {
                       const festivalInfo = seasonalData.top_festivals.find(
                         (f) => f.축제명 === festivalData.festival_name
                       )
-                      const categoryParams = festivalInfo
-                        ? `${festivalInfo.cat1 ? `&cat1=${encodeURIComponent(festivalInfo.cat1)}` : ''}${
-                            festivalInfo.cat2 ? `&cat2=${encodeURIComponent(festivalInfo.cat2)}` : ''
-                          }${festivalInfo.cat3 ? `&cat3=${encodeURIComponent(festivalInfo.cat3)}` : ''}`
-                        : ''
-                      navigate(`/search?keyword=${encodeURIComponent(festivalData.festival_name)}${categoryParams}`)
+                      const navigationState = {
+                        keyword: festivalData.festival_name,
+                        cat1: festivalInfo?.cat1 || '',
+                        cat2: festivalInfo?.cat2 || '',
+                        cat3: festivalInfo?.cat3 || '',
+                      }
+                      console.log('Navigating to /search with state:', navigationState)
+                      navigate('/search', { state: navigationState })
                     }}
                     className="w-full inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition"
                   >

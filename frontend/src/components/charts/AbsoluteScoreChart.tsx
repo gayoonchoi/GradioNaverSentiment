@@ -34,7 +34,7 @@ export default function AbsoluteScoreChart({ scores }: AbsoluteScoreChartProps) 
 
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <LineChart data={data}>
+      <LineChart data={data} margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis dataKey="name" fontSize={11} />
         <YAxis />
