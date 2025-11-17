@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { FaSeedling, FaSun, FaLeaf, FaSnowflake } from 'react-icons/fa'
+import DonutChart from '../charts/DonutChart'
 
 interface SeasonalTabsProps {
   seasonalData: {
@@ -75,66 +76,80 @@ export default function SeasonalTabs({
 
       {/* 탭 내용 */}
       <div className={`${SEASON_CONFIG[activeSeason as keyof typeof SEASON_CONFIG].bg} rounded-xl p-6`}>
-        {/* 통계 */}
-        <div className="grid md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white rounded-lg p-4 shadow">
-            <div className="text-sm text-gray-600">긍정 문장</div>
-            <div className="text-3xl font-bold text-green-600">
-              {currentData?.pos || 0}개
+        {/* 통계 및 차트 */}
+        <div className="grid md:grid-cols-2 gap-6 mb-6">
+          {/* 좌측: 통계 */}
+          <div className="space-y-4">
+            <div className="bg-white rounded-lg p-4 shadow">
+              <div className="text-sm text-gray-600">긍정 문장</div>
+              <div className="text-3xl font-bold text-green-600">
+                {currentData?.pos || 0}개
+              </div>
+            </div>
+            <div className="bg-white rounded-lg p-4 shadow">
+              <div className="text-sm text-gray-600">부정 문장</div>
+              <div className="text-3xl font-bold text-red-600">
+                {currentData?.neg || 0}개
+              </div>
+            </div>
+            <div className="bg-white rounded-lg p-4 shadow">
+              <div className="text-sm text-gray-600">긍정 비율</div>
+              <div className="text-3xl font-bold text-blue-600">
+                {currentData
+                  ? (
+                      ((currentData.pos + currentData.neg > 0
+                        ? currentData.pos / (currentData.pos + currentData.neg)
+                        : 0) * 100
+                    ).toFixed(1))
+                  : 0}
+                %
+              </div>
             </div>
           </div>
-          <div className="bg-white rounded-lg p-4 shadow">
-            <div className="text-sm text-gray-600">부정 문장</div>
-            <div className="text-3xl font-bold text-red-600">
-              {currentData?.neg || 0}개
-            </div>
-          </div>
-          <div className="bg-white rounded-lg p-4 shadow">
-            <div className="text-sm text-gray-600">긍정 비율</div>
-            <div className="text-3xl font-bold text-blue-600">
-              {currentData
-                ? (
-                    ((currentData.pos + currentData.neg > 0
-                      ? currentData.pos / (currentData.pos + currentData.neg)
-                      : 0) * 100
-                  ).toFixed(1))
-                : 0}
-              %
-            </div>
+          {/* 우측: 도넛 차트 */}
+          <div className="bg-white rounded-lg p-4 shadow flex items-center justify-center">
+            {currentData && (
+              <DonutChart positive={currentData.pos} negative={currentData.neg} />
+            )}
           </div>
         </div>
 
         {/* 워드클라우드 */}
-        {currentWordClouds && (
-          <div className="grid md:grid-cols-2 gap-6">
-            {currentWordClouds.positive && (
-              <div className="bg-white rounded-lg p-4 shadow">
-                <h4 className="text-lg font-bold text-green-600 mb-3">
-                  긍정 키워드
-                </h4>
-                <img
-                  src={currentWordClouds.positive}
-                  alt={`${activeSeason} 긍정 워드클라우드`}
-                  className="w-full h-auto rounded"
-                />
-              </div>
-            )}
-            {currentWordClouds.negative && (
-              <div className="bg-white rounded-lg p-4 shadow">
-                <h4 className="text-lg font-bold text-red-600 mb-3">
-                  부정 키워드
-                </h4>
-                <img
-                  src={currentWordClouds.negative}
-                  alt={`${activeSeason} 부정 워드클라우드`}
-                  className="w-full h-auto rounded"
-                />
-              </div>
-            )}
+        {currentWordClouds && (currentWordClouds.positive || currentWordClouds.negative) ? (
+          <div>
+            <h3 className="text-xl font-bold text-gray-800 mb-4">블로그 내용 기반 워드클라우드</h3>
+            <div className="grid md:grid-cols-2 gap-6">
+              {currentWordClouds.positive ? (
+                <div className="bg-white rounded-lg p-4 shadow">
+                  <h4 className="text-lg font-bold text-green-600 mb-3">
+                    긍정 키워드
+                  </h4>
+                  <img
+                    src={currentWordClouds.positive}
+                    alt={`${activeSeason} 긍정 워드클라우드`}
+                    className="w-full h-auto rounded"
+                  />
+                </div>
+              ) : (
+                <div className="bg-white rounded-lg p-4 shadow flex items-center justify-center text-gray-500">긍정 워드클라우드 데이터가 없습니다.</div>
+              )}
+              {currentWordClouds.negative ? (
+                <div className="bg-white rounded-lg p-4 shadow">
+                  <h4 className="text-lg font-bold text-red-600 mb-3">
+                    부정 키워드
+                  </h4>
+                  <img
+                    src={currentWordClouds.negative}
+                    alt={`${activeSeason} 부정 워드클라우드`}
+                    className="w-full h-auto rounded"
+                  />
+                </div>
+              ) : (
+                <div className="bg-white rounded-lg p-4 shadow flex items-center justify-center text-gray-500">부정 워드클라우드 데이터가 없습니다.</div>
+              )}
+            </div>
           </div>
-        )}
-
-        {!currentWordClouds && (
+        ) : (
           <div className="bg-white rounded-lg p-8 text-center text-gray-500">
             워드클라우드 데이터가 없습니다
           </div>

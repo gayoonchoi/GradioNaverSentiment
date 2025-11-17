@@ -6,8 +6,11 @@ import ReactMarkdown from 'react-markdown'
 import ExplanationToggle from '../components/common/ExplanationToggle'
 import { explanations } from '../lib/explanations'
 import SeasonalTabs from '../components/seasonal/SeasonalTabs'
+import SatisfactionChart from '../components/charts/SatisfactionChart'
+import AbsoluteScoreChart from '../components/charts/AbsoluteScoreChart'
+import OutlierChart from '../components/charts/OutlierChart'
 
-import { FaSpinner, FaCheckCircle } from 'react-icons/fa'
+import { FaSpinner, FaCheckCircle, FaChartBar, FaStar, FaBrain, FaChartLine } from 'react-icons/fa'
 
 export default function CategoryAnalysisPage() {
   const [searchParams] = useSearchParams()
@@ -77,16 +80,6 @@ export default function CategoryAnalysisPage() {
         </div>
       </div>
 
-      {/* 카테고리 긍정/부정 비율 */}
-      {data.total_pos !== undefined && data.total_neg !== undefined && (
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">
-            카테고리 전체 긍정/부정 비율
-          </h2>
-          <DonutChart positive={data.total_pos} negative={data.total_neg} />
-        </div>
-      )}
-
       {/* 카테고리 종합 평가 */}
       {data.category_overall_summary && data.category_overall_summary.length > 0 && (
         <div className="bg-white rounded-xl shadow-lg p-8 border-l-4 border-blue-500">
@@ -115,7 +108,7 @@ export default function CategoryAnalysisPage() {
           </div>
         </div>
       )}
-
+      
       {/* 카테고리 주요 불만 사항 */}
       {data.category_negative_summary && data.category_negative_summary.length > 0 && (
         <div className="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl shadow-lg p-8">
@@ -158,21 +151,109 @@ export default function CategoryAnalysisPage() {
         </div>
       )}
 
-      {/* 카테고리 종합 요약 */}
-      {data.overall_summary && data.overall_summary.length > 0 && (
-        <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl shadow-md p-6">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center">
-            <FaCheckCircle className="text-green-500 mr-2" />
-            카테고리 통계 요약
-          </h2>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {data.overall_summary.map((item: any, index: number) => (
-              <div key={index} className="bg-white rounded-lg p-4 shadow">
-                <h3 className="font-bold text-gray-700 mb-2">{item['항목']}</h3>
-                <p className="text-2xl font-bold text-primary">{item['값']}</p>
-              </div>
-            ))}
+      {/* AI 분석 해석 */}
+      {data.distribution_interpretation && (
+        <div className="bg-blue-50 border-l-4 border-blue-400 p-6 rounded-r-lg shadow">
+          <h3 className="text-xl font-bold text-blue-800 mb-3 flex items-center">
+            <FaBrain className="mr-2" />
+            AI 분석 해석
+          </h3>
+          <p className="text-gray-700 leading-relaxed">
+            {data.distribution_interpretation}
+          </p>
+        </div>
+      )}
+
+      {/* 만족도 및 점수 분포 */}
+      <div className="grid md:grid-cols-2 gap-8">
+        {/* 만족도 5단계 분포 */}
+        {data.satisfaction_counts && (
+          <div className="bg-white rounded-xl shadow-md p-6">
+            <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+              <FaStar className="mr-2 text-yellow-500" />
+              카테고리 만족도 5단계 분포
+            </h3>
+            <SatisfactionChart satisfactionCounts={data.satisfaction_counts} />
           </div>
+        )}
+
+        {/* 전체 긍정/부정 비율 */}
+        {data.total_pos !== undefined && data.total_neg !== undefined && (
+          <div className="bg-white rounded-xl shadow-md p-6 flex flex-col">
+            <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+              <FaChartBar className="mr-2 text-blue-500" />
+              카테고리 전체 긍정/부정 비율
+            </h3>
+            <div className="flex-grow flex items-center justify-center">
+              <DonutChart positive={data.total_pos} negative={data.total_neg} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 절대 점수 및 이상치 분포 */}
+      {data.all_scores && data.all_scores.length > 0 && (
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-bold text-gray-800">
+              절대 점수 및 이상치 분포
+            </h3>
+            <ExplanationToggle
+              title={explanations.scoreDistribution.title}
+              content={explanations.scoreDistribution.content}
+            />
+          </div>
+          <div className="grid md:grid-cols-2 gap-8">
+            <AbsoluteScoreChart scores={data.all_scores} />
+            <OutlierChart scores={data.all_scores} outliers={data.outliers} />
+          </div>
+        </div>
+      )}
+
+      {/* 트렌드 분석 */}
+      {(data.trend_graph || data.focused_trend_graph) && (
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center">
+            <FaChartLine className="mr-2 text-indigo-500" />
+            카테고리 평균 트렌드 분석
+          </h2>
+          <div className="grid md:grid-cols-1 lg:grid-cols-2 gap-8">
+            {data.trend_graph && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-bold">전체 트렌드 (1년)</h4>
+                  <ExplanationToggle
+                    title={explanations.overallTrend.title}
+                    content={explanations.overallTrend.content}
+                  />
+                </div>
+                <img src={data.trend_graph} alt="전체 트렌드 그래프" className="w-full rounded-lg shadow-sm" />
+              </div>
+            )}
+            {data.focused_trend_graph && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-bold">집중 트렌드 (축제 기간 중심)</h4>
+                  <ExplanationToggle
+                    title={explanations.focusedTrend.title}
+                    content={explanations.focusedTrend.content}
+                  />
+                </div>
+                <img src={data.focused_trend_graph} alt="집중 트렌드 그래프" className="w-full rounded-lg shadow-sm" />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 계절별 분석 */}
+      {data.seasonal_data && (
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <h2 className="text-2xl font-bold mb-4">계절별 분석</h2>
+          <SeasonalTabs
+            seasonalData={data.seasonal_data}
+            seasonalWordClouds={data.seasonal_word_clouds}
+          />
         </div>
       )}
 
@@ -276,17 +357,6 @@ export default function CategoryAnalysisPage() {
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* 계절별 분석 */}
-      {data.seasonal_data && (
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <h2 className="text-2xl font-bold mb-4">계절별 분석</h2>
-          <SeasonalTabs
-            seasonalData={data.seasonal_data}
-            seasonalWordClouds={data.seasonal_word_clouds}
-          />
         </div>
       )}
     </div>

@@ -362,9 +362,63 @@ def analyze_single_keyword_fully(keyword: str, num_reviews: int, driver, log_det
 # 핵심 분석 로직을 담는 새 함수
 from ..infrastructure.reporting.wordclouds import create_seasonal_trend_wordcloud
 
+def create_category_trend_graph(trend_dfs: list, title: str, focused_dates: tuple = None):
+    """카테고리 내 여러 축제의 트렌드 데이터프레임 리스트를 받아 평균 트렌드 그래프를 생성합니다."""
+    if not trend_dfs:
+        return None
+
+    try:
+        # 모든 트렌드 데이터프레임을 하나로 합치고, 날짜를 인덱스로 설정
+        all_trends = pd.concat(trend_dfs, ignore_index=True)
+        all_trends['period'] = pd.to_datetime(all_trends['period'])
+        
+        # 날짜별로 모든 축제의 ratio 값을 평균냅니다.
+        # pivot_table을 사용하여 각 축제를 열로, 날짜를 행으로 만듭니다.
+        pivot_df = all_trends.pivot_table(index='period', columns='keyword', values='ratio')
+        
+        # 행(날짜)별 평균을 계산합니다.
+        mean_trend = pivot_df.mean(axis=1)
+
+        # 그래프 생성
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.plot(mean_trend.index, mean_trend.values, marker='.', linestyle='-', label=f'{title} 평균')
+
+        # 집중 기간이 주어지면 해당 기간을 표시
+        if focused_dates:
+            start_date, end_date = focused_dates
+            if start_date and end_date:
+                ax.axvline(pd.to_datetime(start_date), color='green', linestyle='--', label='최초 행사 시작')
+                ax.axvline(pd.to_datetime(end_date), color='red', linestyle='--', label='최후 행사 종료')
+                ax.axvspan(pd.to_datetime(start_date), pd.to_datetime(end_date), alpha=0.15, color='yellow')
+
+
+        ax.set_title(f"카테고리 평균 트렌드: {title}", fontsize=16, fontweight='bold')
+        ax.set_xlabel("날짜")
+        ax.set_ylabel("평균 검색량 지수")
+        ax.legend()
+        ax.grid(True, linestyle='--', alpha=0.6)
+        fig.tight_layout()
+
+        # 이미지 파일로 저장
+        temp_dir = os.path.join(os.getcwd(), "temp_images")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        sanitized_title = re.sub(r'[\\/*?"<>|:\s]+', '_', title)
+        file_path = os.path.join(temp_dir, f"category_trend_{sanitized_title}_{uuid.uuid4()}.png")
+        
+        fig.savefig(file_path, dpi=100)
+        plt.close(fig)
+        
+        return f"/images/{os.path.basename(file_path)}"
+    except Exception as e:
+        print(f"카테고리 트렌드 그래프 생성 중 오류: {e}")
+        traceback.print_exc()
+        return None
+
 def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str, num_reviews: int, driver, log_details: bool, progress: gr.Progress, initial_progress: float, total_steps: int):
     if not festivals_to_analyze: return {"error": f"'{group_name}' 그룹에서 분석할 축제를 찾을 수 없습니다."}
 
+    # --- 집계 변수 초기화 ---
     category_results, all_blog_posts_list = [], []
     festival_full_results = []
     agg_pos, agg_neg = 0, 0
@@ -376,11 +430,17 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
     seasonal_trend_scores = {"봄": {}, "여름": {}, "가을": {}, "겨울": {}}
     total_festivals_sentiment_score = 0
     analyzed_festivals_count = 0
+    
+    # 신규 집계 변수
+    agg_all_scores = []
+    agg_trend_dfs = []
+    agg_focused_trend_dfs = []
 
     total_festivals = len(festivals_to_analyze)
     if os.environ.get("LOG_DEBUG") == "true":
         print(f"[DEBUG][CategoryAnalysis] Initial total_festivals: {total_festivals}")
 
+    # --- 개별 축제 분석 루프 ---
     for i, festival_name in enumerate(festivals_to_analyze):
         def nested_progress_callback(p, desc=""):
             progress(initial_progress + (i + p) / total_festivals / total_steps, desc=f"분석 중: {festival_name} ({i+1}/{total_festivals}) - {desc}")
@@ -395,58 +455,55 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
         negative_sentences_list = result.get("negative_sentences", [])
         negative_summary = summarize_negative_feedback(negative_sentences_list)
 
-        # 부정 판정은 있지만 요약이 없는 경우 처리
         if not negative_summary and result.get("total_neg", 0) > 0:
-            negative_summary = f"부정 판정 {result.get('total_neg', 0)}건이 있으나 구체적인 불만 내용을 추출하지 못했습니다. (문장이 너무 짧거나 불명확할 수 있습니다)"
+            negative_summary = f"부정 판정 {result.get('total_neg', 0)}건이 있으나 구체적인 불만 내용을 추출하지 못했습니다."
 
         result['precomputed_negative_summary'] = negative_summary
         festival_full_results.append(result)
 
-        # 시즌별 트렌드 점수 집계
-        festival_start_date = result.get("festival_start_date")
-        trend_df = result.get("trend_df")
-        if festival_start_date and not trend_df.empty:
-            season = get_season(festival_start_date.strftime("%Y%m%d"))
-            if season != "정보없음":
-                peak_trend_score = trend_df['ratio'].max()
-                seasonal_trend_scores[season][festival_name] = peak_trend_score
-
+        # --- 데이터 집계 ---
         agg_pos += result.get("total_pos", 0)
         agg_neg += result.get("total_neg", 0)
         agg_strong_pos += result.get("total_strong_pos", 0)
         agg_strong_neg += result.get("total_strong_neg", 0)
         agg_negative_sentences.extend(result.get("negative_sentences", []))
         
-        for season, pairs in result.get("seasonal_aspect_pairs", {}).items():
-            if pairs:
-                agg_seasonal_aspect_pairs[season].extend(pairs)
+        # 신규 데이터 집계
+        agg_all_scores.extend(result.get("all_scores", []))
+        if "trend_df" in result and not result["trend_df"].empty:
+            agg_trend_dfs.append(result["trend_df"])
+        if "focused_trend_df" in result and not result["focused_trend_df"].empty:
+            agg_focused_trend_dfs.append(result["focused_trend_df"])
 
+        # (기존 집계 로직 계속)
+        festival_start_date = result.get("festival_start_date")
+        trend_df = result.get("trend_df")
+        if festival_start_date and not trend_df.empty:
+            season = get_season(festival_start_date.strftime("%Y%m%d"))
+            if season != "정보없음":
+                seasonal_trend_scores[season][festival_name] = trend_df['ratio'].max()
+
+        for season, pairs in result.get("seasonal_aspect_pairs", {}).items():
+            if pairs: agg_seasonal_aspect_pairs[season].extend(pairs)
         for season, texts in result.get("seasonal_texts", {}).items():
             if texts: agg_seasonal_texts[season].append(texts)
         for season, data in result.get("seasonal_data", {}).items():
             agg_seasonal[season]["pos"] += data.get("pos", 0)
             agg_seasonal[season]["neg"] += data.get("neg", 0)
         
-        total_freq = result.get("total_sentiment_frequency", 0)
-        sentiment_score = result.get('total_sentiment_score', 50.0)
-        pos_perc = (result.get('total_pos', 0) / total_freq * 100) if total_freq > 0 else 0.0
-        neg_perc = (result.get('total_neg', 0) / total_freq * 100) if total_freq > 0 else 0.0
-        
-        total_festivals_sentiment_score += sentiment_score
+        total_festivals_sentiment_score += result.get('total_sentiment_score', 50.0)
         analyzed_festivals_count += 1
-        
-        trend_metrics = result.get("trend_metrics", {})
         
         category_results.append({
             "축제명": festival_name,
-            '감성 빈도': total_freq,
-            '감성 점수': f"{sentiment_score:.1f}",
+            '감성 빈도': result.get("total_sentiment_frequency", 0),
+            '감성 점수': f"{result.get('total_sentiment_score', 50.0):.1f}",
             "긍정 문장 수": result.get("total_pos", 0),
             "부정 문장 수": result.get("total_neg", 0),
-            "긍정 비율 (%)": f"{pos_perc:.1f}",
-            "부정 비율 (%)": f"{neg_perc:.1f}",
+            "긍정 비율 (%)": f"{(result.get('total_pos', 0) / result.get('total_sentiment_frequency', 1) * 100):.1f}",
+            "부정 비율 (%)": f"{(result.get('total_neg', 0) / result.get('total_sentiment_frequency', 1) * 100):.1f}",
             '축제 기간 (일)': result.get('event_period', 'N/A'),
-            '트렌드 지수 (%)': trend_metrics.get('trend_index', 'N/A'),
+            '트렌드 지수 (%)': result.get("trend_metrics", {}).get('trend_index', 'N/A'),
             '만족도 변화': f"{result.get('satisfaction_delta', 0):.1f}",
             '주요 감성 키워드': str(result.get('emotion_keyword_freq', {})),
             '주요 불만 사항 요약': result['precomputed_negative_summary'] or "없음"
@@ -458,14 +515,55 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
     if not category_results: 
         return {"error": f"선택된 그룹 '{group_name}' 내 모든 축제({total_festivals}개)에서 유효한 분석 결과를 얻지 못했습니다."}
 
-    # 계절별 트렌드 워드클라우드 생성
-    seasonal_trend_wc_paths = {}
-    for season, scores in seasonal_trend_scores.items():
-        if scores:
-            mask_path = os.path.abspath(os.path.join("assets", f"mask_{SEASON_EN_MAP.get(season)}.png"))
-            wc_path = create_seasonal_trend_wordcloud(scores, f"{group_name}_{season}_트렌드", mask_path)
-            seasonal_trend_wc_paths[season] = wc_path
+    # --- 루프 후 종합 분석 수행 ---
 
+    # 1. 카테고리 전체 만족도 분석
+    from .utils import calculate_satisfaction_boundaries, map_score_to_level, generate_distribution_interpretation
+    import numpy as np
+    
+    category_distribution_interpretation = ""
+    category_satisfaction_counts = {}
+    category_avg_satisfaction = 3.0
+    category_boundaries = {}
+    category_outliers = []
+
+    if agg_all_scores:
+        category_boundary_results = calculate_satisfaction_boundaries(agg_all_scores)
+        category_boundaries = category_boundary_results["boundaries"]
+        category_outliers = category_boundary_results["outliers"]
+        
+        category_all_satisfaction_levels = [map_score_to_level(score, category_boundaries) for score in agg_all_scores]
+        level_map = {1: "매우 불만족", 2: "불만족", 3: "보통", 4: "만족", 5: "매우 만족"}
+        category_satisfaction_counts = Counter([level_map.get(level, "보통") for level in category_all_satisfaction_levels])
+        category_avg_satisfaction = np.mean(category_all_satisfaction_levels) if category_all_satisfaction_levels else 3.0
+
+    # 2. 카테고리 전체 트렌드 분석
+    category_trend_graph_url = create_category_trend_graph(agg_trend_dfs, group_name)
+    
+    all_start_dates = [res['festival_start_date'] for res in festival_full_results if res.get('festival_start_date')]
+    all_end_dates = [res['festival_end_date'] for res in festival_full_results if res.get('festival_end_date')]
+    min_start = min(all_start_dates) if all_start_dates else None
+    max_end = max(all_end_dates) if all_end_dates else None
+    
+    category_focused_trend_graph_url = create_category_trend_graph(
+        agg_focused_trend_dfs, f"{group_name} (집중)", focused_dates=(min_start, max_end)
+    ) if min_start and max_end else None
+
+    # 3. 카테고리 전체 AI 분포 해석 생성
+    if agg_all_scores:
+        try:
+            # 카테고리 레벨에서는 트렌드 지수를 직접 계산하기 어려우므로 N/A 처리
+            category_trend_metrics = {"trend_index": "N/A"}
+            category_distribution_interpretation = generate_distribution_interpretation(
+                category_satisfaction_counts, len(agg_all_scores), category_boundaries, category_avg_satisfaction,
+                all_scores=agg_all_scores, outliers=category_outliers, total_pos=agg_pos, total_neg=agg_neg,
+                trend_metrics=category_trend_metrics
+            )
+        except Exception as e:
+            print(f"카테고리 만족도 분포 해석 생성 중 오류: {e}")
+            category_distribution_interpretation = f"카테고리 평균 만족도: {category_avg_satisfaction:.2f} / 5.0"
+
+    # (기존 로직 계속)
     total_sentiment_frequency = agg_pos + agg_neg
     total_sentiment_score = ((agg_strong_pos - agg_strong_neg) / total_sentiment_frequency * 50 + 50) if total_sentiment_frequency > 0 else 50.0
     theme_sentiment_avg = total_festivals_sentiment_score / analyzed_festivals_count if analyzed_festivals_count > 0 else 0.0
@@ -473,45 +571,23 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
     final_category_df = pd.DataFrame(category_results)
     final_all_blogs_df = pd.concat(all_blog_posts_list, ignore_index=True) if all_blog_posts_list else pd.DataFrame()
 
-    # 카테고리 계절별 워드클라우드 생성
+    # 카테고리 계절별 내용 기반 워드클라우드
     category_seasonal_word_clouds = {"봄": {}, "여름": {}, "가을": {}, "겨울": {}}
-    SEASON_MASK_MAP = {
-        "봄": "spring",
-        "여름": "summer",
-        "가을": "fall",
-        "겨울": "winter"
-    }
     for season, pairs in agg_seasonal_aspect_pairs.items():
-        if season == "정보없음" or not pairs:
-            continue
-
-        season_en = SEASON_MASK_MAP.get(season)
-        mask_path = None
-        if season_en:
-            mask_path = os.path.abspath(os.path.join("assets", f"mask_{season_en}.png"))
-
+        if season == "정보없음" or not pairs: continue
+        mask_path = os.path.abspath(os.path.join("assets", f"mask_{SEASON_EN_MAP.get(season)}.png"))
         pos_wc_path, neg_wc_path = create_sentiment_wordclouds(pairs, f"{group_name}_{season}", mask_path=mask_path)
+        if pos_wc_path: category_seasonal_word_clouds[season]['positive'] = f"/images/{os.path.basename(pos_wc_path)}"
+        if neg_wc_path: category_seasonal_word_clouds[season]['negative'] = f"/images/{os.path.basename(neg_wc_path)}"
 
-        if pos_wc_path:
-            category_seasonal_word_clouds[season]['positive'] = f"/images/{os.path.basename(pos_wc_path)}"
-        if neg_wc_path:
-            category_seasonal_word_clouds[season]['negative'] = f"/images/{os.path.basename(neg_wc_path)}"
-
-    # 카테고리 종합 평가 생성
-    category_negative_summary = ""
+    # 카테고리 종합 LLM 요약
+    category_negative_summary = summarize_negative_feedback(agg_negative_sentences)
     category_overall_summary = ""
-
-    if agg_negative_sentences:
-        category_negative_summary = summarize_negative_feedback(agg_negative_sentences)
-
-    # 종합 평가용 임시 결과 객체
     if analyzed_festivals_count > 0:
         category_temp_results = {
-            "keyword": group_name,
-            "total_pos": agg_pos,
-            "total_neg": agg_neg,
-            "trend_metrics": {"trend_index": 0},  # 카테고리에는 트렌드 지표가 없으므로 0으로 설정
-            "distribution_interpretation": f"{group_name} 카테고리 내 {analyzed_festivals_count}개 축제를 종합 분석한 결과입니다.",
+            "keyword": group_name, "total_pos": agg_pos, "total_neg": agg_neg,
+            "trend_metrics": {"trend_index": 0},
+            "distribution_interpretation": category_distribution_interpretation,
             "negative_summary": category_negative_summary
         }
         category_overall_summary = generate_overall_summary(category_temp_results)
@@ -519,26 +595,37 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
     if os.environ.get("LOG_DEBUG") == "true":
         print(f"[DEBUG][CategoryAnalysis] Final total_festivals: {total_festivals}, analyzed_festivals_count: {analyzed_festivals_count}")
 
+    # --- 최종 결과 반환 ---
     return {
         "status": f"총 {total_festivals}개 축제 요청 중 {len(category_results)}개 분석 완료.",
         "total_festivals": total_festivals,
         "analyzed_festivals": analyzed_festivals_count,
         "total_pos": agg_pos, "total_neg": agg_neg,
+        "seasonal_data": agg_seasonal,
+        "individual_festival_results_df": final_category_df,
+        "category_overall_summary": category_overall_summary,
+        "category_negative_summary": category_negative_summary,
+        "category_seasonal_word_clouds": category_seasonal_word_clouds,
+        
+        # 신규 추가 데이터
+        "all_scores": agg_all_scores,
+        "satisfaction_counts": dict(category_satisfaction_counts),
+        "avg_satisfaction": category_avg_satisfaction,
+        "distribution_interpretation": category_distribution_interpretation,
+        "outliers": category_outliers,
+        "trend_graph": category_trend_graph_url,
+        "focused_trend_graph": category_focused_trend_graph_url,
+
+        # 내부 사용 데이터 (API 응답에서는 제외될 수 있음)
         "total_sentiment_frequency": total_sentiment_frequency,
         "total_sentiment_score": total_sentiment_score,
         "theme_sentiment_avg": theme_sentiment_avg,
-        "seasonal_data": agg_seasonal,
         "negative_sentences": agg_negative_sentences,
         "seasonal_texts": {k: "\n".join(v) for k, v in agg_seasonal_texts.items()},
         "seasonal_aspect_pairs": agg_seasonal_aspect_pairs,
-        "seasonal_trend_wc_paths": seasonal_trend_wc_paths, # 워드클라우드 경로 추가
-        "individual_festival_results_df": final_category_df,
         "all_blog_posts_df": final_all_blogs_df,
         "festival_full_results": festival_full_results,
         "all_blog_judgments": [j for res in festival_full_results for j in res.get("blog_judgments", [])],
-        "category_overall_summary": category_overall_summary,  # 카테고리 종합 평가
-        "category_negative_summary": category_negative_summary,  # 카테고리 주요 불만 사항
-        "category_seasonal_word_clouds": category_seasonal_word_clouds  # 카테고리 계절별 워드클라우드
     }
 
 # 기존 함수는 새로 만든 그룹 분석 함수를 호출하는 래퍼(wrapper)가 됨

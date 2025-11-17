@@ -1,5 +1,4 @@
 
-
 import os
 import re
 import requests
@@ -8,9 +7,21 @@ import datetime
 import matplotlib
 matplotlib.use('Agg')  # GUI 없는 백엔드 사용 (FastAPI 비동기 환경 호환)
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 import io
 import uuid
 from ...config import get_naver_trend_api_keys
+
+# 한글 폰트 설정
+try:
+    font_path = "C:/Windows/Fonts/malgun.ttf"
+    font_prop = font_manager.FontProperties(fname=font_path).get_name()
+    plt.rcParams['font.family'] = font_prop
+    plt.rcParams['axes.unicode_minus'] = False
+except FileNotFoundError:
+    print("Malgun Gothic font not found. Please install it or change the font path.")
+    # 대체 폰트나 기본 설정을 유지할 수 있습니다.
+    pass
 
 def safe_filename(name: str) -> str:
     """Windows 금지문자들을 유니코드 대체 문자로 변환"""

@@ -289,12 +289,20 @@ async def analyze_category(request: CategoryAnalysisRequest):
             "analyzed_festivals": results.get("analyzed_festivals", 0),
             "total_pos": results.get("total_pos", 0),
             "total_neg": results.get("total_neg", 0),
-            "overall_summary": results.get("overall_summary_df", {}).to_dict('records') if hasattr(results.get("overall_summary_df"), 'to_dict') else [],
             "individual_results": results.get("individual_festival_results_df", {}).to_dict('records') if hasattr(results.get("individual_festival_results_df"), 'to_dict') else [],
             "seasonal_data": results.get("seasonal_data", {}),
             "category_overall_summary": results.get("category_overall_summary", ""),
             "category_negative_summary": results.get("category_negative_summary", ""),
             "seasonal_word_clouds": results.get("category_seasonal_word_clouds", {}),
+            
+            # 신규 추가된 종합 분석 데이터
+            "all_scores": results.get("all_scores", []),
+            "satisfaction_counts": results.get("satisfaction_counts", {}),
+            "avg_satisfaction": results.get("avg_satisfaction", 3.0),
+            "distribution_interpretation": results.get("distribution_interpretation", ""),
+            "outliers": results.get("outliers", []),
+            "trend_graph": results.get("trend_graph"),
+            "focused_trend_graph": results.get("focused_trend_graph"),
         }
 
         print(f"[OK] 카테고리 분석 완료")
