@@ -701,7 +701,7 @@ GitHub Issues를 통해 문의해주세요:
 
 ### 이메일 문의
 
-📧 your.email@example.com
+📧 ericyum9196@gmail.com
 
 ---
 
