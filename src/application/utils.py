@@ -11,7 +11,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 import traceback
-from ..infrastructure.llm_client import get_llm_client # 상대 경로 임포트 수정
+from ..infrastructure.llm_client import get_llm_client  # 상대 경로 임포트 수정
 
 PAGE_SIZE = 10
 
@@ -19,15 +19,18 @@ PAGE_SIZE = 10
 CACHE_DIR = "cache"
 CACHE_EXPIRY_DAYS = 30  # 캐시 만료 기간 (일)
 
+
 def get_cache_key(keyword: str, num_reviews: int) -> str:
     """키워드와 리뷰 개수로 캐시 키 생성"""
     key_str = f"{keyword}_{num_reviews}"
-    return hashlib.md5(key_str.encode('utf-8')).hexdigest()
+    return hashlib.md5(key_str.encode("utf-8")).hexdigest()
+
 
 def get_cache_path(cache_key: str) -> str:
     """캐시 파일 경로 반환"""
     os.makedirs(CACHE_DIR, exist_ok=True)
     return os.path.join(CACHE_DIR, f"{cache_key}.json")
+
 
 def is_cache_valid(cache_path: str) -> bool:
     """캐시 파일이 유효한지 확인 (존재 여부 및 만료 기간)"""
@@ -40,6 +43,7 @@ def is_cache_valid(cache_path: str) -> bool:
 
     return file_mtime > expiry_date
 
+
 def load_cached_analysis(keyword: str, num_reviews: int) -> dict:
     """캐시된 분석 결과 로드"""
     try:
@@ -49,13 +53,14 @@ def load_cached_analysis(keyword: str, num_reviews: int) -> dict:
         if not is_cache_valid(cache_path):
             return None
 
-        with open(cache_path, 'r', encoding='utf-8') as f:
+        with open(cache_path, "r", encoding="utf-8") as f:
             cached_data = json.load(f)
             print(f"✅ 캐시된 분석 결과 사용: {keyword} (num_reviews={num_reviews})")
             return cached_data
     except Exception as e:
         print(f"⚠️ 캐시 로드 실패: {e}")
         return None
+
 
 def save_analysis_to_cache(keyword: str, num_reviews: int, results: dict) -> None:
     """분석 결과를 캐시에 저장 (API 형식용)"""
@@ -67,7 +72,7 @@ def save_analysis_to_cache(keyword: str, num_reviews: int, results: dict) -> Non
         cacheable_results = {}
         for key, value in results.items():
             if isinstance(value, pd.DataFrame):
-                cacheable_results[key] = value.to_dict('records')
+                cacheable_results[key] = value.to_dict("records")
             elif isinstance(value, (datetime,)):
                 cacheable_results[key] = value.isoformat() if value else None
             elif isinstance(value, (dict, list, str, int, float, bool, type(None))):
@@ -76,11 +81,12 @@ def save_analysis_to_cache(keyword: str, num_reviews: int, results: dict) -> Non
                 # 직렬화할 수 없는 타입은 문자열로 변환
                 cacheable_results[key] = str(value)
 
-        with open(cache_path, 'w', encoding='utf-8') as f:
+        with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(cacheable_results, f, ensure_ascii=False, indent=2)
             print(f"💾 분석 결과 캐시 저장: {keyword} (num_reviews={num_reviews})")
     except Exception as e:
         print(f"⚠️ 캐시 저장 실패 (분석은 계속 진행됨): {e}")
+
 
 def save_raw_analysis_to_cache(keyword: str, num_reviews: int, results: dict) -> None:
     """원본 분석 결과를 캐시에 저장 (내부 재사용용)"""
@@ -97,17 +103,19 @@ def save_raw_analysis_to_cache(keyword: str, num_reviews: int, results: dict) ->
                 for col in df_copy.columns:
                     # is_datetime64_any_dtype를 사용하여 모든 datetime 형식 확인
                     if pd.api.types.is_datetime64_any_dtype(df_copy[col]):
-                        df_copy[col] = df_copy[col].apply(lambda x: x.isoformat() if pd.notnull(x) else None)
-                
+                        df_copy[col] = df_copy[col].apply(
+                            lambda x: x.isoformat() if pd.notnull(x) else None
+                        )
+
                 cacheable_results[key] = {
-                    '_type': 'DataFrame',
-                    'data': df_copy.to_dict('records'),
-                    'columns': list(df_copy.columns)
+                    "_type": "DataFrame",
+                    "data": df_copy.to_dict("records"),
+                    "columns": list(df_copy.columns),
                 }
             elif isinstance(value, (datetime, pd.Timestamp)):
                 cacheable_results[key] = {
-                    '_type': 'datetime',
-                    'value': value.isoformat() if value else None
+                    "_type": "datetime",
+                    "value": value.isoformat() if value else None,
                 }
             elif isinstance(value, (dict, list, str, int, float, bool, type(None))):
                 cacheable_results[key] = value
@@ -115,11 +123,12 @@ def save_raw_analysis_to_cache(keyword: str, num_reviews: int, results: dict) ->
                 # 직렬화할 수 없는 타입은 문자열로 변환
                 cacheable_results[key] = str(value)
 
-        with open(cache_path, 'w', encoding='utf-8') as f:
+        with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(cacheable_results, f, ensure_ascii=False, indent=2)
             print(f"💾 원본 분석 결과 캐시 저장: {keyword} (num_reviews={num_reviews})")
     except Exception as e:
         print(f"⚠️ 원본 캐시 저장 실패 (분석은 계속 진행됨): {e}")
+
 
 def load_raw_cached_analysis(keyword: str, num_reviews: int) -> dict:
     """캐시된 원본 분석 결과 로드"""
@@ -130,96 +139,137 @@ def load_raw_cached_analysis(keyword: str, num_reviews: int) -> dict:
         if not is_cache_valid(cache_path):
             return None
 
-        with open(cache_path, 'r', encoding='utf-8') as f:
+        with open(cache_path, "r", encoding="utf-8") as f:
             cached_data = json.load(f)
 
             # DataFrame과 datetime 복원
             restored_results = {}
             for key, value in cached_data.items():
-                if isinstance(value, dict) and value.get('_type') == 'DataFrame':
+                if isinstance(value, dict) and value.get("_type") == "DataFrame":
                     # DataFrame 복원
-                    restored_results[key] = pd.DataFrame(value['data'], columns=value['columns'])
-                elif isinstance(value, dict) and value.get('_type') == 'datetime':
+                    restored_results[key] = pd.DataFrame(
+                        value["data"], columns=value["columns"]
+                    )
+                elif isinstance(value, dict) and value.get("_type") == "datetime":
                     # datetime 복원
-                    restored_results[key] = datetime.fromisoformat(value['value']) if value['value'] else None
+                    restored_results[key] = (
+                        datetime.fromisoformat(value["value"])
+                        if value["value"]
+                        else None
+                    )
                 else:
                     restored_results[key] = value
 
-            print(f"✅ 캐시된 원본 분석 결과 사용: {keyword} (num_reviews={num_reviews})")
+            print(
+                f"✅ 캐시된 원본 분석 결과 사용: {keyword} (num_reviews={num_reviews})"
+            )
             return restored_results
     except Exception as e:
         print(f"⚠️ 원본 캐시 로드 실패: {e}")
         traceback.print_exc()
         return None
 
+
 def get_category_cache_key(cat1: str, cat2: str, cat3: str, num_reviews: int) -> str:
     """카테고리 분석을 위한 캐시 키 생성"""
     key_str = f"category_{cat1}_{cat2}_{cat3}_{num_reviews}"
-    return hashlib.md5(key_str.encode('utf-8')).hexdigest()
+    return hashlib.md5(key_str.encode("utf-8")).hexdigest()
 
-def load_category_cached_analysis(cat1: str, cat2: str, cat3: str, num_reviews: int) -> dict:
+
+def load_category_cached_analysis(
+    cat1: str, cat2: str, cat3: str, num_reviews: int
+) -> dict:
     """캐시된 카테고리 분석 결과 로드"""
     try:
-        cache_key = get_category_cache_key(cat1, cat2, cat3, num_reviews) + "_category_raw"
+        cache_key = (
+            get_category_cache_key(cat1, cat2, cat3, num_reviews) + "_category_raw"
+        )
         cache_path = get_cache_path(cache_key)
 
         if not is_cache_valid(cache_path):
             return None
 
-        with open(cache_path, 'r', encoding='utf-8') as f:
+        with open(cache_path, "r", encoding="utf-8") as f:
             cached_data = json.load(f)
 
             # DataFrame과 datetime 복원
             restored_results = {}
             for key, value in cached_data.items():
-                if isinstance(value, dict) and value.get('_type') == 'DataFrame':
-                    restored_results[key] = pd.DataFrame(value['data'], columns=value['columns'])
-                elif isinstance(value, dict) and value.get('_type') == 'datetime':
-                    restored_results[key] = datetime.fromisoformat(value['value']) if value['value'] else None
+                if isinstance(value, dict) and value.get("_type") == "DataFrame":
+                    restored_results[key] = pd.DataFrame(
+                        value["data"], columns=value["columns"]
+                    )
+                elif isinstance(value, dict) and value.get("_type") == "datetime":
+                    restored_results[key] = (
+                        datetime.fromisoformat(value["value"])
+                        if value["value"]
+                        else None
+                    )
                 else:
                     restored_results[key] = value
 
-            print(f"✅ 캐시된 카테고리 분석 결과 사용: {cat1}>{cat2}>{cat3} (num_reviews={num_reviews})")
+            print(
+                f"✅ 캐시된 카테고리 분석 결과 사용: {cat1}>{cat2}>{cat3} (num_reviews={num_reviews})"
+            )
             return restored_results
     except Exception as e:
         print(f"⚠️ 카테고리 캐시 로드 실패: {e}")
         traceback.print_exc()
         return None
 
-def save_category_analysis_to_cache(cat1: str, cat2: str, cat3: str, num_reviews: int, results: dict) -> None:
+
+def save_category_analysis_to_cache(
+    cat1: str, cat2: str, cat3: str, num_reviews: int, results: dict
+) -> None:
     """카테고리 분석 결과를 캐시에 저장"""
     try:
-        cache_key = get_category_cache_key(cat1, cat2, cat3, num_reviews) + "_category_raw"
+        cache_key = (
+            get_category_cache_key(cat1, cat2, cat3, num_reviews) + "_category_raw"
+        )
         cache_path = get_cache_path(cache_key)
 
         cacheable_results = {}
         for key, value in results.items():
+            # --- 수정된 부분 ---
+            # festival_full_results는 리스트 내부에 DataFrame을 포함하여 직렬화가 복잡하므로 캐시에서 제외
+            if key == "festival_full_results":
+                cacheable_results[key] = (
+                    f"Omitted {len(value)} full results (not serializable)"
+                )
+                continue
+            # --- 여기까지 ---
+
             if isinstance(value, pd.DataFrame):
                 df_copy = value.copy()
                 for col in df_copy.columns:
                     if pd.api.types.is_datetime64_any_dtype(df_copy[col]):
-                        df_copy[col] = df_copy[col].apply(lambda x: x.isoformat() if pd.notnull(x) else None)
-                
+                        df_copy[col] = df_copy[col].apply(
+                            lambda x: x.isoformat() if pd.notnull(x) else None
+                        )
+
                 cacheable_results[key] = {
-                    '_type': 'DataFrame',
-                    'data': df_copy.to_dict('records'),
-                    'columns': list(df_copy.columns)
+                    "_type": "DataFrame",
+                    "data": df_copy.to_dict("records"),
+                    "columns": list(df_copy.columns),
                 }
             elif isinstance(value, (datetime, pd.Timestamp)):
                 cacheable_results[key] = {
-                    '_type': 'datetime',
-                    'value': value.isoformat() if value else None
+                    "_type": "datetime",
+                    "value": value.isoformat() if value else None,
                 }
             elif isinstance(value, (dict, list, str, int, float, bool, type(None))):
                 cacheable_results[key] = value
             else:
                 cacheable_results[key] = str(value)
 
-        with open(cache_path, 'w', encoding='utf-8') as f:
+        with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(cacheable_results, f, ensure_ascii=False, indent=2)
-            print(f"💾 카테고리 분석 결과 캐시 저장: {cat1}>{cat2}>{cat3} (num_reviews={num_reviews})")
+            print(
+                f"💾 카테고리 분석 결과 캐시 저장: {cat1}>{cat2}>{cat3} (num_reviews={num_reviews})"
+            )
     except Exception as e:
         print(f"⚠️ 카테고리 캐시 저장 실패 (분석은 계속 진행됨): {e}")
+
 
 def change_page(full_df, page_num):
     if not isinstance(full_df, pd.DataFrame) or full_df.empty:
@@ -237,75 +287,126 @@ def change_page(full_df, page_num):
         traceback.print_exc()
         return pd.DataFrame(), 1, "/ 1"
 
+
 def get_season(postdate: str) -> str:
     try:
         # 숫자만 추출하여 YYYYMMDD 형식으로 만듭니다.
-        cleaned_date = re.sub(r'\D', '', postdate)
+        cleaned_date = re.sub(r"\D", "", postdate)
         if not cleaned_date or len(cleaned_date) < 6:
             return "정보없음"
-        
+
         month = int(cleaned_date[4:6])
-        if month in [3, 4, 5]: return "봄"
-        elif month in [6, 7, 8]: return "여름"
-        elif month in [9, 10, 11]: return "가을"
-        else: return "겨울"
+        if month in [3, 4, 5]:
+            return "봄"
+        elif month in [6, 7, 8]:
+            return "여름"
+        elif month in [9, 10, 11]:
+            return "가을"
+        else:
+            return "겨울"
     except (ValueError, IndexError):
         return "정보없음"
 
+
 def save_df_to_csv(df: pd.DataFrame, base_name: str, keyword: str) -> str:
-    if df is None or df.empty: return None
+    if df is None or df.empty:
+        return None
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         # 파일명으로 사용할 수 없는 문자 제거 강화
-        sanitized_keyword = re.sub(r'[\\/*?"<>|:\s]+', '_', keyword) if keyword else "result"
+        sanitized_keyword = (
+            re.sub(r'[\\/*?"<>|:\s]+', "_", keyword) if keyword else "result"
+        )
         # 키워드가 너무 길 경우 잘라내기
         sanitized_keyword = sanitized_keyword[:50]
         csv_filepath = f"{sanitized_keyword}_{base_name}_{timestamp}.csv"
-        df.to_csv(csv_filepath, index=False, encoding='utf-8-sig')
+        df.to_csv(csv_filepath, index=False, encoding="utf-8-sig")
         return csv_filepath
     except Exception as e:
         print(f"CSV 저장 중 오류 ({keyword}): {e}")
         return None
+
 
 def create_festinsight_table(results: dict, keyword: str) -> pd.DataFrame:
     """FestInsight_Analysis_Table 형식의 통합 데이터프레임을 생성합니다."""
     try:
         # DB에서 축제 상세 정보 가져오기
         from ..infrastructure.web.tour_api_client import get_festival_details
+
         festival_details = get_festival_details(keyword)
 
         # 기본 정보는 results에서 가져옴
         trend_metrics = results.get("trend_metrics", {})
 
         table_data = {
-            'keyword': keyword,
-            'addr1': festival_details.get('addr1', 'N/A') if festival_details else 'N/A',
-            'addr2': festival_details.get('addr2', 'N/A') if festival_details else 'N/A',
-            'areaCode': festival_details.get('areacode', 'N/A') if festival_details else 'N/A',
-            'eventStartDate': results.get('festival_start_date').strftime('%Y%m%d') if results.get('festival_start_date') else 'N/A',
-            'eventEndDate': results.get('festival_end_date').strftime('%Y%m%d') if results.get('festival_end_date') else 'N/A',
-            'eventPeriod': results.get('event_period', 'N/A'),
-            'trend_index': trend_metrics.get('trend_index', 0),
-            'sentiment_score': round(results.get('total_sentiment_score', 50.0), 2),
-            'positive_ratio': round((results.get('total_pos', 0) / results.get('total_sentiment_frequency', 1)) * 100, 2) if results.get('total_sentiment_frequency', 0) > 0 else 0,
-            'negative_ratio': round((results.get('total_neg', 0) / results.get('total_sentiment_frequency', 1)) * 100, 2) if results.get('total_sentiment_frequency', 0) > 0 else 0,
-            'complaint_factor': '주요 불만 사항 참조',  # 별도 요약 텍스트로 제공
-            'satisfaction_delta': round(results.get('satisfaction_delta', 0), 2),
-            'theme_sentiment_avg': 'N/A',  # 단일 키워드 분석에서는 해당 없음
-            'emotion_keyword_freq': str(results.get('emotion_keyword_freq', {}))
+            "keyword": keyword,
+            "addr1": (
+                festival_details.get("addr1", "N/A") if festival_details else "N/A"
+            ),
+            "addr2": (
+                festival_details.get("addr2", "N/A") if festival_details else "N/A"
+            ),
+            "areaCode": (
+                festival_details.get("areacode", "N/A") if festival_details else "N/A"
+            ),
+            "eventStartDate": (
+                results.get("festival_start_date").strftime("%Y%m%d")
+                if results.get("festival_start_date")
+                else "N/A"
+            ),
+            "eventEndDate": (
+                results.get("festival_end_date").strftime("%Y%m%d")
+                if results.get("festival_end_date")
+                else "N/A"
+            ),
+            "eventPeriod": results.get("event_period", "N/A"),
+            "trend_index": trend_metrics.get("trend_index", 0),
+            "sentiment_score": round(results.get("total_sentiment_score", 50.0), 2),
+            "positive_ratio": (
+                round(
+                    (
+                        results.get("total_pos", 0)
+                        / results.get("total_sentiment_frequency", 1)
+                    )
+                    * 100,
+                    2,
+                )
+                if results.get("total_sentiment_frequency", 0) > 0
+                else 0
+            ),
+            "negative_ratio": (
+                round(
+                    (
+                        results.get("total_neg", 0)
+                        / results.get("total_sentiment_frequency", 1)
+                    )
+                    * 100,
+                    2,
+                )
+                if results.get("total_sentiment_frequency", 0) > 0
+                else 0
+            ),
+            "complaint_factor": "주요 불만 사항 참조",  # 별도 요약 텍스트로 제공
+            "satisfaction_delta": round(results.get("satisfaction_delta", 0), 2),
+            "theme_sentiment_avg": "N/A",  # 단일 키워드 분석에서는 해당 없음
+            "emotion_keyword_freq": str(results.get("emotion_keyword_freq", {})),
         }
 
         return pd.DataFrame([table_data])
     except Exception as e:
         print(f"FestInsight 테이블 생성 중 오류: {e}")
         import traceback
+
         traceback.print_exc()
         return pd.DataFrame()
 
-def create_festinsight_table_for_category(results: dict, category_name: str) -> pd.DataFrame:
+
+def create_festinsight_table_for_category(
+    results: dict, category_name: str
+) -> pd.DataFrame:
     """카테고리 분석 결과를 FestInsight_Analysis_Table 형식으로 변환합니다."""
     try:
-        festival_results = results.get('individual_festival_results_df', pd.DataFrame())
+        festival_results = results.get("individual_festival_results_df", pd.DataFrame())
 
         if festival_results.empty:
             return pd.DataFrame()
@@ -314,21 +415,25 @@ def create_festinsight_table_for_category(results: dict, category_name: str) -> 
         table_data_list = []
         for _, row in festival_results.iterrows():
             table_data = {
-                'keyword': row.get('축제명', 'N/A'),
-                'addr1': 'N/A',
-                'addr2': 'N/A',
-                'areaCode': 'N/A',
-                'eventStartDate': 'N/A',
-                'eventEndDate': 'N/A',
-                'eventPeriod': row.get('축제 기간 (일)', 'N/A'),
-                'trend_index': row.get('트렌드 지수 (%)', 'N/A'),
-                'sentiment_score': row.get('감성 점수', 'N/A'),
-                'positive_ratio': row.get('긍정 비율 (%)', 'N/A'),
-                'negative_ratio': row.get('부정 비율 (%)', 'N/A'),
-                'complaint_factor': row.get('주요 불만 사항 요약', 'N/A')[:100] if pd.notna(row.get('주요 불만 사항 요약')) else 'N/A',
-                'satisfaction_delta': row.get('만족도 변화', 'N/A'),
-                'theme_sentiment_avg': results.get('theme_sentiment_avg', 'N/A'),
-                'emotion_keyword_freq': row.get('주요 감성 키워드', 'N/A')
+                "keyword": row.get("축제명", "N/A"),
+                "addr1": "N/A",
+                "addr2": "N/A",
+                "areaCode": "N/A",
+                "eventStartDate": "N/A",
+                "eventEndDate": "N/A",
+                "eventPeriod": row.get("축제 기간 (일)", "N/A"),
+                "trend_index": row.get("트렌드 지수 (%)", "N/A"),
+                "sentiment_score": row.get("감성 점수", "N/A"),
+                "positive_ratio": row.get("긍정 비율 (%)", "N/A"),
+                "negative_ratio": row.get("부정 비율 (%)", "N/A"),
+                "complaint_factor": (
+                    row.get("주요 불만 사항 요약", "N/A")[:100]
+                    if pd.notna(row.get("주요 불만 사항 요약"))
+                    else "N/A"
+                ),
+                "satisfaction_delta": row.get("만족도 변화", "N/A"),
+                "theme_sentiment_avg": results.get("theme_sentiment_avg", "N/A"),
+                "emotion_keyword_freq": row.get("주요 감성 키워드", "N/A"),
             }
             table_data_list.append(table_data)
 
@@ -336,23 +441,31 @@ def create_festinsight_table_for_category(results: dict, category_name: str) -> 
     except Exception as e:
         print(f"카테고리 FestInsight 테이블 생성 중 오류: {e}")
         import traceback
+
         traceback.print_exc()
         return pd.DataFrame()
+
 
 def summarize_negative_feedback(sentences: list) -> str:
     if not sentences:
         if os.environ.get("LOG_DEBUG") == "true":
-            print("[DEBUG] summarize_negative_feedback: No sentences provided, returning empty string.")
+            print(
+                "[DEBUG] summarize_negative_feedback: No sentences provided, returning empty string."
+            )
         return ""
     try:
         llm = get_llm_client(model="gemini-2.5-pro")
 
         if os.environ.get("LOG_DEBUG") == "true":
-            print(f"[DEBUG] summarize_negative_feedback: Received {len(sentences)} sentences.")
+            print(
+                f"[DEBUG] summarize_negative_feedback: Received {len(sentences)} sentences."
+            )
             print(f"[DEBUG] First 3 sentences: {sentences[:3]}")
 
         # 빈 문장, None, 너무 짧은 문장(3자 미만) 필터링
-        filtered_sentences = [s for s in sentences if s and isinstance(s, str) and len(s.strip()) >= 3]
+        filtered_sentences = [
+            s for s in sentences if s and isinstance(s, str) and len(s.strip()) >= 3
+        ]
 
         if os.environ.get("LOG_DEBUG") == "true":
             print(f"[DEBUG] After basic filtering: {len(filtered_sentences)} sentences")
@@ -361,31 +474,42 @@ def summarize_negative_feedback(sentences: list) -> str:
 
         if not unique_sentences:
             if os.environ.get("LOG_DEBUG") == "true":
-                print("[DEBUG] summarize_negative_feedback: No unique sentences after filtering, returning empty string.")
+                print(
+                    "[DEBUG] summarize_negative_feedback: No unique sentences after filtering, returning empty string."
+                )
             # 부정 판정은 있지만 문장이 없는 경우를 위한 명시적 메시지
             return ""
 
         negative_feedback_str = "\n- ".join(unique_sentences[:50])
-        
-        if os.environ.get("LOG_DEBUG") == "true":
-            print(f"[DEBUG] summarize_negative_feedback: negative_feedback_str length: {len(negative_feedback_str)}")
-            print(f"[DEBUG] negative_feedback_str (first 200 chars): {negative_feedback_str[:200]}")
 
-        prompt = f'''[수집된 부정적인 의견]\n- {negative_feedback_str}\n\n[요청] 위 의견들을 종합하여 주요 불만 사항을 1., 2., 3. ... 형식의 목록으로 요약해주세요. 만약 의견이 없다면 '특별한 불만 사항 없음'이라고 답해주세요.'''
-        
         if os.environ.get("LOG_DEBUG") == "true":
-            print(f"[DEBUG] summarize_negative_feedback: LLM Prompt (first 500 chars): {prompt[:500]}")
+            print(
+                f"[DEBUG] summarize_negative_feedback: negative_feedback_str length: {len(negative_feedback_str)}"
+            )
+            print(
+                f"[DEBUG] negative_feedback_str (first 200 chars): {negative_feedback_str[:200]}"
+            )
+
+        prompt = f"""[수집된 부정적인 의견]\n- {negative_feedback_str}\n\n[요청] 위 의견들을 종합하여 주요 불만 사항을 1., 2., 3. ... 형식의 목록으로 요약해주세요. 만약 의견이 없다면 '특별한 불만 사항 없음'이라고 답해주세요."""
+
+        if os.environ.get("LOG_DEBUG") == "true":
+            print(
+                f"[DEBUG] summarize_negative_feedback: LLM Prompt (first 500 chars): {prompt[:500]}"
+            )
 
         response = llm.invoke(prompt)
-        
+
         if os.environ.get("LOG_DEBUG") == "true":
-            print(f"[DEBUG] summarize_negative_feedback: LLM Response: {response.content.strip()}")
+            print(
+                f"[DEBUG] summarize_negative_feedback: LLM Response: {response.content.strip()}"
+            )
 
         return response.content.strip()
     except Exception as e:
         print(f"부정적 의견 요약 중 오류 발생: {e}")
         traceback.print_exc()
         return "부정적 의견을 요약하는 데 실패했습니다."
+
 
 def create_driver():
     """웹 드라이버 생성"""
@@ -402,9 +526,14 @@ def create_driver():
     except Exception as e:
         print(f"WebDriver 생성 실패: {e}")
         traceback.print_exc()
-        raise RuntimeError("WebDriver를 생성할 수 없습니다. Chrome 또는 ChromeDriver 설치를 확인하세요.") from e
+        raise RuntimeError(
+            "WebDriver를 생성할 수 없습니다. Chrome 또는 ChromeDriver 설치를 확인하세요."
+        ) from e
 
-def calculate_trend_metrics(trend_df: pd.DataFrame, start_date: datetime, end_date: datetime):
+
+def calculate_trend_metrics(
+    trend_df: pd.DataFrame, start_date: datetime, end_date: datetime
+):
     """트렌드 데이터프레임과 축제 기간을 바탕으로 트렌드 관련 지표들을 계산합니다."""
     if trend_df.empty or not start_date or not end_date:
         return {
@@ -417,7 +546,7 @@ def calculate_trend_metrics(trend_df: pd.DataFrame, start_date: datetime, end_da
 
     try:
         # 날짜 타입을 pandas datetime으로 통일
-        trend_df['period'] = pd.to_datetime(trend_df['period'])
+        trend_df["period"] = pd.to_datetime(trend_df["period"])
         start_date = pd.to_datetime(start_date)
         end_date = pd.to_datetime(end_date)
 
@@ -426,21 +555,36 @@ def calculate_trend_metrics(trend_df: pd.DataFrame, start_date: datetime, end_da
         after_period_end = end_date + pd.Timedelta(days=30)
 
         # 기간별 데이터 필터링
-        before_df = trend_df[(trend_df['period'] >= before_period_start) & (trend_df['period'] < start_date)]
-        during_df = trend_df[(trend_df['period'] >= start_date) & (trend_df['period'] <= end_date)]
-        after_df = trend_df[(trend_df['period'] > end_date) & (trend_df['period'] <= after_period_end)]
+        before_df = trend_df[
+            (trend_df["period"] >= before_period_start)
+            & (trend_df["period"] < start_date)
+        ]
+        during_df = trend_df[
+            (trend_df["period"] >= start_date) & (trend_df["period"] <= end_date)
+        ]
+        after_df = trend_df[
+            (trend_df["period"] > end_date) & (trend_df["period"] <= after_period_end)
+        ]
 
         # 각 기간별 평균 계산
-        before_avg = before_df['ratio'].mean() if not before_df.empty else 0
-        during_avg = during_df['ratio'].mean() if not during_df.empty else 0
-        after_avg = after_df['ratio'].mean() if not after_df.empty else 0
+        before_avg = before_df["ratio"].mean() if not before_df.empty else 0
+        during_avg = during_df["ratio"].mean() if not during_df.empty else 0
+        after_avg = after_df["ratio"].mean() if not after_df.empty else 0
 
         # 트렌드 지수 계산
         # 축제 전 대비 축제 중 트렌드 변화 (0으로 나누는 경우 방지)
-        trend_index = (during_avg / before_avg) * 100 if before_avg > 0 else (during_avg * 100 if during_avg > 0 else 0)
+        trend_index = (
+            (during_avg / before_avg) * 100
+            if before_avg > 0
+            else (during_avg * 100 if during_avg > 0 else 0)
+        )
         # 축제 중 대비 축제 후 트렌드 변화
-        after_trend_index = (after_avg / during_avg) * 100 if during_avg > 0 else (after_avg * 100 if after_avg > 0 else 0)
-        
+        after_trend_index = (
+            (after_avg / during_avg) * 100
+            if during_avg > 0
+            else (after_avg * 100 if after_avg > 0 else 0)
+        )
+
         return {
             "trend_index": round(trend_index, 1),
             "after_trend_index": round(after_trend_index, 1),
@@ -452,8 +596,13 @@ def calculate_trend_metrics(trend_df: pd.DataFrame, start_date: datetime, end_da
         print(f"트렌드 지표 계산 중 오류: {e}")
         traceback.print_exc()
         return {
-            "trend_index": 0, "after_trend_index": 0, "before_avg": 0, "during_avg": 0, "after_avg": 0,
+            "trend_index": 0,
+            "after_trend_index": 0,
+            "before_avg": 0,
+            "during_avg": 0,
+            "after_avg": 0,
         }
+
 
 def calculate_satisfaction_boundaries(scores: list) -> dict:
     """
@@ -509,6 +658,7 @@ def calculate_satisfaction_boundaries(scores: list) -> dict:
         "outliers": outliers,
     }
 
+
 def map_score_to_level(score: float, boundaries: dict) -> int:
     """
     감성 점수를 5단계 만족도 레벨로 매핑합니다.
@@ -533,9 +683,18 @@ def map_score_to_level(score: float, boundaries: dict) -> int:
     else:
         return 5  # 매우 만족
 
-def generate_distribution_interpretation(satisfaction_counts: dict, total_count: int, boundaries: dict, avg_satisfaction: float,
-                                        all_scores: list = None, outliers: list = None, total_pos: int = 0, total_neg: int = 0,
-                                        trend_metrics: dict = None) -> str:
+
+def generate_distribution_interpretation(
+    satisfaction_counts: dict,
+    total_count: int,
+    boundaries: dict,
+    avg_satisfaction: float,
+    all_scores: list = None,
+    outliers: list = None,
+    total_pos: int = 0,
+    total_neg: int = 0,
+    trend_metrics: dict = None,
+) -> str:
     """
     LLM을 사용하여 전체 차트 데이터(6개)를 종합 분석하여 자연어 해석을 생성합니다.
 
@@ -558,11 +717,17 @@ def generate_distribution_interpretation(satisfaction_counts: dict, total_count:
 
         # 카운트와 비율 계산
         labels = ["매우 불만족", "불만족", "보통", "만족", "매우 만족"]
-        counts_str = "\n".join([f"- {label}: {satisfaction_counts.get(label, 0)}개 ({satisfaction_counts.get(label, 0) / total_count * 100:.1f}%)"
-                                for label in labels])
+        counts_str = "\n".join(
+            [
+                f"- {label}: {satisfaction_counts.get(label, 0)}개 ({satisfaction_counts.get(label, 0) / total_count * 100:.1f}%)"
+                for label in labels
+            ]
+        )
 
         # 1. 전체 긍정/부정 비율 데이터
-        total_sentiment = total_pos + total_neg if (total_pos or total_neg) else total_count
+        total_sentiment = (
+            total_pos + total_neg if (total_pos or total_neg) else total_count
+        )
         pos_ratio = (total_pos / total_sentiment * 100) if total_sentiment > 0 else 0
         neg_ratio = (total_neg / total_sentiment * 100) if total_sentiment > 0 else 0
 
@@ -581,6 +746,7 @@ def generate_distribution_interpretation(satisfaction_counts: dict, total_count:
         score_dist_str = ""
         if all_scores:
             import numpy as np
+
             min_score = np.min(all_scores)
             max_score = np.max(all_scores)
             median_score = np.median(all_scores)
@@ -595,7 +761,9 @@ def generate_distribution_interpretation(satisfaction_counts: dict, total_count:
         # 4. 이상치 분석 데이터
         outlier_str = ""
         if outliers is not None:
-            outlier_ratio = (len(outliers) / total_count * 100) if total_count > 0 else 0
+            outlier_ratio = (
+                (len(outliers) / total_count * 100) if total_count > 0 else 0
+            )
             outlier_str = f"""
 ### 4. 이상치 분석
 - 이상치 개수: {len(outliers)}개 (전체의 {outlier_ratio:.1f}%)
@@ -604,10 +772,10 @@ def generate_distribution_interpretation(satisfaction_counts: dict, total_count:
         # 5. 트렌드 분석 데이터
         trend_str = ""
         if trend_metrics:
-            trend_index = trend_metrics.get('trend_index', 0)
-            before_avg = trend_metrics.get('before_avg', 0)
-            during_avg = trend_metrics.get('during_avg', 0)
-            after_avg = trend_metrics.get('after_avg', 0)
+            trend_index = trend_metrics.get("trend_index", 0)
+            before_avg = trend_metrics.get("before_avg", 0)
+            during_avg = trend_metrics.get("during_avg", 0)
+            after_avg = trend_metrics.get("after_avg", 0)
 
             # Safely format numeric values, or display as is if not numeric
             def format_metric(value):
@@ -647,22 +815,29 @@ def generate_distribution_interpretation(satisfaction_counts: dict, total_count:
         traceback.print_exc()
         return f"평균 만족도는 {avg_satisfaction:.2f} / 5.0점입니다. 긍정 비율은 {(total_pos/(total_pos+total_neg)*100) if (total_pos+total_neg) > 0 else 0:.1f}%입니다."
 
+
 def generate_overall_summary(results: dict) -> str:
     """
     LLM을 사용하여 전체 분석 결과에 대한 종합 평가를 생성합니다.
     """
     try:
         llm = get_llm_client(model="gemini-2.5-pro")
-        
+
         # 프롬프트에 사용할 주요 지표 추출
-        keyword = results.get('keyword', '해당 축제')
-        avg_satisfaction = results.get('avg_satisfaction', 3.0)
-        total_pos = results.get('total_pos', 0)
-        total_neg = results.get('total_neg', 0)
-        pos_ratio = (total_pos / (total_pos + total_neg) * 100) if (total_pos + total_neg) > 0 else 0
-        trend_index = results.get('trend_metrics', {}).get('trend_index', 0)
-        distribution_interpretation = results.get('distribution_interpretation', '데이터 없음')
-        negative_summary = results.get('negative_summary', '데이터 없음')
+        keyword = results.get("keyword", "해당 축제")
+        avg_satisfaction = results.get("avg_satisfaction", 3.0)
+        total_pos = results.get("total_pos", 0)
+        total_neg = results.get("total_neg", 0)
+        pos_ratio = (
+            (total_pos / (total_pos + total_neg) * 100)
+            if (total_pos + total_neg) > 0
+            else 0
+        )
+        trend_index = results.get("trend_metrics", {}).get("trend_index", 0)
+        distribution_interpretation = results.get(
+            "distribution_interpretation", "데이터 없음"
+        )
+        negative_summary = results.get("negative_summary", "데이터 없음")
 
         prompt = f"""
         **{keyword}**에 대한 종합 분석 결과입니다. 아래 데이터를 바탕으로 전문가 입장에서 최종 평가를 내려주세요.
@@ -693,7 +868,10 @@ def generate_overall_summary(results: dict) -> str:
         traceback.print_exc()
         return "종합 평가를 생성하는 데 실패했습니다."
 
-def generate_recommendation_analysis(analysis_result: dict, region: str, season: str) -> str:
+
+def generate_recommendation_analysis(
+    analysis_result: dict, region: str, season: str
+) -> str:
     """
     단일 축제 분석 결과를 바탕으로 지역과 계절을 고려한 AI 추천 분석 생성
 
@@ -715,7 +893,9 @@ def generate_recommendation_analysis(analysis_result: dict, region: str, season:
         sentiment_score = analysis_result.get("sentiment_score", 0)
         trend_index = analysis_result.get("trend_metrics", {}).get("trend_index", 0)
         negative_summary = analysis_result.get("negative_summary", "")
-        distribution_interpretation = analysis_result.get("distribution_interpretation", "")
+        distribution_interpretation = analysis_result.get(
+            "distribution_interpretation", ""
+        )
 
         total_sentiment = total_pos + total_neg
         pos_ratio = (total_pos / total_sentiment * 100) if total_sentiment > 0 else 0
@@ -768,7 +948,10 @@ def generate_recommendation_analysis(analysis_result: dict, region: str, season:
         traceback.print_exc()
         return "AI 추천 분석을 생성하는 데 실패했습니다."
 
-def generate_comparison_recommendation(results_a: dict, results_b: dict, name_a: str, name_b: str, region: str, season: str) -> str:
+
+def generate_comparison_recommendation(
+    results_a: dict, results_b: dict, name_a: str, name_b: str, region: str, season: str
+) -> str:
     """
     두 축제(또는 카테고리) 비교 분석 결과를 바탕으로 지역과 계절을 고려한 AI 비교 추천 생성
 
