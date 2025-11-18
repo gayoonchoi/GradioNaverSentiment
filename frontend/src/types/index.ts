@@ -103,6 +103,7 @@ export interface CategoryAnalysisResponse {
     가을?: { positive?: string; negative?: string };
     겨울?: { positive?: string; negative?: string };
   };
+  keyword_wordclouds?: Record<string, string | null>;
   category_overall_summary: string;
   category_negative_summary: string;
   trend_graph?: string;
@@ -134,8 +135,8 @@ export interface ComparisonResponse {
   status: string;
   keyword_a: string;
   keyword_b: string;
-  results_a: any;
-  results_b: any;
+  results_a: KeywordAnalysisResponse;
+  results_b: KeywordAnalysisResponse;
   comparison_summary: string;
 }
 
@@ -143,28 +144,8 @@ export interface CategoryComparisonResponse {
   status: string;
   category_a: string;
   category_b: string;
-  results_a: {
-    total_festivals: number;
-    analyzed_festivals: number;
-    total_pos: number;
-    total_neg: number;
-    avg_satisfaction: number;
-    satisfaction_counts: SatisfactionCounts;
-    seasonal_data: SeasonalData;
-    category_overall_summary: string;
-    distribution_interpretation: string;
-  };
-  results_b: {
-    total_festivals: number;
-    analyzed_festivals: number;
-    total_pos: number;
-    total_neg: number;
-    avg_satisfaction: number;
-    satisfaction_counts: SatisfactionCounts;
-    seasonal_data: SeasonalData;
-    category_overall_summary: string;
-    distribution_interpretation: string;
-  };
+  results_a: CategoryAnalysisResponse;
+  results_b: CategoryAnalysisResponse;
   comparison_summary: string;
 }
 

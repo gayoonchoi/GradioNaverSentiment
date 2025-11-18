@@ -7,6 +7,9 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import uvicorn
 import traceback
+import asyncio
+import json
+from fastapi.responses import StreamingResponse
 
 # 프로젝트 경로 추가
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -903,6 +906,344 @@ async def get_festival_trend(
         print(f"[ERROR] 트렌드 조회 중 오류: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"조회 중 오류 발생: {str(e)}")
+
+# ==================== 스트리밍 엔드포인트 ====================
+
+class ProgressCallback:
+    def __init__(self, queue: asyncio.Queue):
+        self.queue = queue
+
+    def __call__(self, percent, desc=""):
+        try:
+            # 이벤트 루프가 실행 중인지 확인하고, 실행 중이면 큐에 작업을 넣습니다.
+            loop = asyncio.get_running_loop()
+            loop.call_soon_threadsafe(self.queue.put_nowait, {"type": "progress", "percent": percent, "message": desc})
+        except RuntimeError:
+            # 이벤트 루프가 없는 경우 (예: 테스트 환경)
+            self.queue.put_nowait({"type": "progress", "percent": percent, "message": desc})
+
+
+async def run_analysis_in_thread(target_func, *args, **kwargs):
+    """분석 함수를 별도 스레드에서 실행하고 결과를 반환합니다."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, target_func, *args, **kwargs)
+
+def format_sse_message(data: dict) -> str:
+    """주어진 데이터를 SSE 메시지 형식으로 변환합니다."""
+    json_data = json.dumps(data, ensure_ascii=False)
+    return f"data: {json_data}\n\n"
+
+def format_single_keyword_response(results: dict, keyword: str) -> dict:
+    """analyze_single_keyword_fully 결과를 API 응답 형식으로 변환합니다."""
+    return {
+        "status": results.get("status", "분석 완료"),
+        "keyword": keyword,
+        "total_pos": results.get("total_pos", 0),
+        "total_neg": results.get("total_neg", 0),
+        "avg_satisfaction": results.get("avg_satisfaction", 3.0),
+        "satisfaction_counts": results.get("satisfaction_counts", {}),
+        "distribution_interpretation": results.get("distribution_interpretation", ""),
+        "all_scores": results.get("all_scores", []),
+        "outliers": results.get("outliers", []),
+        "seasonal_data": results.get("seasonal_data", {}),
+        "blog_results": results.get("blog_results_df", {}).to_dict('records') if hasattr(results.get("blog_results_df"), 'to_dict') else [],
+        "negative_summary": results.get("negative_summary", ""),
+        "overall_summary": results.get("overall_summary", ""),
+        "trend_metrics": results.get("trend_metrics", {}),
+        "url_markdown": results.get("url_markdown", ""),
+        "trend_graph": results.get("trend_graph"),
+        "focused_trend_graph": results.get("focused_trend_graph"),
+        "seasonal_word_clouds": results.get("seasonal_word_clouds"),
+        "addr1": results.get("addr1", "N/A"),
+        "addr2": results.get("addr2", "N/A"),
+        "areaCode": results.get("areaCode", "N/A"),
+        "eventStartDate": results.get("festival_start_date").strftime('%Y-%m-%d') if results.get("festival_start_date") else "N/A",
+        "eventEndDate": results.get("festival_end_date").strftime('%Y-%m-%d') if results.get("festival_end_date") else "N/A",
+        "eventPeriod": results.get("event_period", "N/A"),
+        "sentiment_score": results.get("total_sentiment_score", 0),
+        "satisfaction_delta": results.get("satisfaction_delta", 0),
+        "emotion_keyword_freq": results.get("emotion_keyword_freq", {})
+    }
+
+def format_category_response(results: dict, request: CategoryAnalysisRequest) -> dict:
+    """perform_category_analysis 결과를 API 응답 형식으로 변환합니다."""
+    return {
+        "status": results.get("status", "분석 완료"),
+        "category": f"{request.cat1} > {request.cat2} > {request.cat3}",
+        "total_festivals": results.get("total_festivals", 0),
+        "analyzed_festivals": results.get("analyzed_festivals", 0),
+        "total_pos": results.get("total_pos", 0),
+        "total_neg": results.get("total_neg", 0),
+        "individual_results": results.get("individual_festival_results_df", {}).to_dict('records') if hasattr(results.get("individual_festival_results_df"), 'to_dict') else [],
+        "seasonal_data": results.get("seasonal_data", {}),
+        "category_overall_summary": results.get("category_overall_summary", ""),
+        "category_negative_summary": results.get("category_negative_summary", ""),
+        "seasonal_word_clouds": results.get("category_seasonal_word_clouds", {}),
+        "keyword_wordclouds": results.get("category_keyword_wordclouds", {}),
+        "all_scores": results.get("all_scores", []),
+        "satisfaction_counts": results.get("satisfaction_counts", {}),
+        "avg_satisfaction": results.get("avg_satisfaction", 3.0),
+        "distribution_interpretation": results.get("distribution_interpretation", ""),
+        "outliers": results.get("outliers", []),
+        "trend_graph": results.get("trend_graph"),
+        "focused_trend_graph": results.get("focused_trend_graph"),
+    }
+
+@app.post("/api/analyze/keyword/stream")
+async def analyze_keyword_stream(request: KeywordAnalysisRequest):
+    """단일 키워드 감성 분석 (스트리밍)"""
+    
+    cached_results = load_cached_analysis(request.keyword, request.num_reviews)
+    if cached_results:
+        async def single_result_stream():
+            yield format_sse_message({"type": "progress", "percent": 1, "message": "캐시된 결과 로드 완료"})
+            yield format_sse_message({"type": "result", "data": cached_results})
+        return StreamingResponse(single_result_stream(), media_type="text/event-stream")
+
+    queue = asyncio.Queue()
+    progress_callback = ProgressCallback(queue)
+
+    async def analysis_generator():
+        global driver
+        if not driver:
+            driver = create_driver()
+            
+        yield format_sse_message({"type": "progress", "percent": 0, "message": "분석 시작..."})
+
+        analysis_task = asyncio.create_task(
+            run_analysis_in_thread(
+                analyze_single_keyword_fully,
+                keyword=request.keyword,
+                num_reviews=request.num_reviews,
+                driver=driver,
+                log_details=request.log_details,
+                progress=progress_callback,
+                progress_desc="스트리밍 분석"
+            )
+        )
+
+        while not analysis_task.done():
+            try:
+                message = await asyncio.wait_for(queue.get(), timeout=0.1)
+                yield format_sse_message(message)
+            except asyncio.TimeoutError:
+                await asyncio.sleep(0.1)
+                continue
+        
+        results = await analysis_task
+        
+        if "error" in results:
+            yield format_sse_message({"type": "error", "message": results["error"]})
+        else:
+            response = format_single_keyword_response(results, request.keyword)
+            save_analysis_to_cache(request.keyword, request.num_reviews, response)
+            yield format_sse_message({"type": "result", "data": response})
+
+    return StreamingResponse(analysis_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/analyze/comparison/stream")
+async def analyze_comparison_stream(request: ComparisonRequest):
+    """2개 키워드 비교 분석 (스트리밍)"""
+    queue_a = asyncio.Queue()
+    queue_b = asyncio.Queue()
+    progress_a = ProgressCallback(queue_a)
+    progress_b = ProgressCallback(queue_b)
+
+    async def analysis_generator():
+        global driver
+        if not driver:
+            driver = create_driver()
+
+        yield format_sse_message({"type": "progress", "percent": 0, "message": "비교 분석 시작..."})
+
+        task_a = asyncio.create_task(
+            run_analysis_in_thread(
+                analyze_with_cache,
+                keyword=request.keyword_a, num_reviews=request.num_reviews,
+                log_details=True, progress_desc=f"{request.keyword_a} 분석"
+            )
+        )
+        task_b = asyncio.create_task(
+            run_analysis_in_thread(
+                analyze_with_cache,
+                keyword=request.keyword_b, num_reviews=request.num_reviews,
+                log_details=True, progress_desc=f"{request.keyword_b} 분석"
+            )
+        )
+
+        # For comparison, we don't have fine-grained progress, so we'll just wait
+        results_a, results_b = await asyncio.gather(task_a, task_b)
+
+        if "error" in results_a or "error" in results_b:
+            error_msg = results_a.get("error", "") or results_b.get("error", "")
+            yield format_sse_message({"type": "error", "message": error_msg})
+            return
+
+        # AI를 사용한 비교 요약 생성
+        comparison_summary = generate_comparison_recommendation(
+            results_a=results_a,
+            results_b=results_b,
+            name_a=request.keyword_a,
+            name_b=request.keyword_b,
+            region="전국", # 비교 요약에서는 특정 지역/계절을 가정하지 않음
+            season="전시즌"
+        )
+
+        response = {
+            "status": "비교 분석 완료",
+            "keyword_a": request.keyword_a,
+            "keyword_b": request.keyword_b,
+            "results_a": results_a,
+            "results_b": results_b,
+            "comparison_summary": comparison_summary,
+        }
+        yield format_sse_message({"type": "progress", "percent": 1, "message": "분석 완료"})
+        yield format_sse_message({"type": "result", "data": response})
+
+    return StreamingResponse(analysis_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/analyze/category/stream")
+async def analyze_category_stream(request: CategoryAnalysisRequest):
+    """카테고리별 축제 분석 (스트리밍)"""
+    queue = asyncio.Queue()
+    progress_callback = ProgressCallback(queue)
+
+    async def analysis_generator():
+        global driver
+        if not driver:
+            driver = create_driver()
+            
+        yield format_sse_message({"type": "progress", "percent": 0, "message": "카테고리 분석 시작..."})
+
+        analysis_task = asyncio.create_task(
+            run_analysis_in_thread(
+                perform_category_analysis,
+                cat1=request.cat1,
+                cat2=request.cat2,
+                cat3=request.cat3,
+                num_reviews=request.num_reviews,
+                driver=driver,
+                log_details=True,
+                progress=progress_callback,
+                initial_progress=0,
+                total_steps=1
+            )
+        )
+
+        while not analysis_task.done():
+            try:
+                message = await asyncio.wait_for(queue.get(), timeout=0.1)
+                yield format_sse_message(message)
+            except asyncio.TimeoutError:
+                await asyncio.sleep(0.1) 
+                continue
+        
+        results = await analysis_task
+        
+        if "error" in results:
+            yield format_sse_message({"type": "error", "message": results["error"]})
+        else:
+            response = format_category_response(results, request)
+            yield format_sse_message({"type": "result", "data": response})
+
+    return StreamingResponse(analysis_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/analyze/category-comparison/stream")
+async def analyze_category_comparison_stream(request: CategoryComparisonRequest):
+    """카테고리 비교 분석 (스트리밍)"""
+    queue_a = asyncio.Queue()
+    queue_b = asyncio.Queue()
+    progress_a = ProgressCallback(queue_a)
+    progress_b = ProgressCallback(queue_b)
+
+    category_a_name = f"{request.cat1_a}>{request.cat2_a}>{request.cat3_a}"
+    category_b_name = f"{request.cat1_b}>{request.cat2_b}>{request.cat3_b}"
+
+    async def analysis_generator():
+        global driver
+        if not driver:
+            driver = create_driver()
+
+        yield format_sse_message({"type": "progress", "percent": 0, "message": "카테고리 비교 분석 시작..."})
+
+        task_a = asyncio.create_task(
+            run_analysis_in_thread(
+                perform_category_analysis,
+                cat1=request.cat1_a, cat2=request.cat2_a, cat3=request.cat3_a,
+                num_reviews=request.num_reviews, driver=driver, log_details=True,
+                progress=progress_a, initial_progress=0, total_steps=1
+            )
+        )
+        task_b = asyncio.create_task(
+            run_analysis_in_thread(
+                perform_category_analysis,
+                cat1=request.cat1_b, cat2=request.cat2_b, cat3=request.cat3_b,
+                num_reviews=request.num_reviews, driver=driver, log_details=True,
+                progress=progress_b, initial_progress=0, total_steps=1
+            )
+        )
+
+        percent_a, percent_b = 0, 0
+        message_a, message_b = "대기 중...", "대기 중..."
+
+        while not task_a.done() or not task_b.done():
+            try:
+                msg_a = await asyncio.wait_for(queue_a.get(), timeout=0.05) if not task_a.done() else None
+                if msg_a:
+                    percent_a = msg_a.get("percent", 0)
+                    message_a = msg_a.get("message", "")
+            except asyncio.TimeoutError:
+                pass
+
+            try:
+                msg_b = await asyncio.wait_for(queue_b.get(), timeout=0.05) if not task_b.done() else None
+                if msg_b:
+                    percent_b = msg_b.get("percent", 0)
+                    message_b = msg_b.get("message", "")
+            except asyncio.TimeoutError:
+                pass
+
+            total_percent = (percent_a * 0.5) + (percent_b * 0.5)
+            combined_message = f"[A: {category_a_name[:15]}...] {message_a}\n[B: {category_b_name[:15]}...] {message_b}"
+            yield format_sse_message({"type": "progress", "percent": total_percent, "message": combined_message})
+            await asyncio.sleep(0.1)
+
+        results_a, results_b = await asyncio.gather(task_a, task_b)
+
+        if "error" in results_a or "error" in results_b:
+            error_msg = results_a.get("error", "") or results_b.get("error", "")
+            yield format_sse_message({"type": "error", "message": error_msg})
+            return
+        
+        formatted_a = format_category_response(results_a, request)
+        formatted_b = format_category_response(results_b, request)
+
+        # AI를 사용한 비교 요약 생성
+        comparison_summary = generate_comparison_recommendation(
+            results_a=formatted_a,
+            results_b=formatted_b,
+            name_a=category_a_name,
+            name_b=category_b_name,
+            region="전국",
+            season="전시즌"
+        )
+
+        response = {
+            "status": "카테고리 비교 분석 완료",
+            "category_a": category_a_name,
+            "category_b": category_b_name,
+            "results_a": formatted_a,
+            "results_b": formatted_b,
+            "comparison_summary": comparison_summary,
+        }
+        yield format_sse_message({"type": "progress", "percent": 1, "message": "분석 완료"})
+        yield format_sse_message({"type": "result", "data": response})
+
+    return StreamingResponse(analysis_generator(), media_type="text/event-stream")
+
 
 # 서버 실행
 if __name__ == "__main__":

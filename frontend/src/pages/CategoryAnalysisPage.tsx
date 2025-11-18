@@ -1,73 +1,101 @@
-import { useSearchParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { analyzeCategory, getRecommendationForCategory } from '../lib/api'
-import { useState } from 'react'
-import DonutChart from '../components/charts/DonutChart'
-import ReactMarkdown from 'react-markdown'
-import ExplanationToggle from '../components/common/ExplanationToggle'
-import { explanations } from '../lib/explanations'
-import SeasonalTabs from '../components/seasonal/SeasonalTabs'
-import SatisfactionChart from '../components/charts/SatisfactionChart'
-import AbsoluteScoreChart from '../components/charts/AbsoluteScoreChart'
-import OutlierChart from '../components/charts/OutlierChart'
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { analyzeCategoryStream, getRecommendationForCategory, ProgressEvent } from '../lib/api';
+import { useState, useEffect } from 'react';
+import DonutChart from '../components/charts/DonutChart';
+import ReactMarkdown from 'react-markdown';
+import ExplanationToggle from '../components/common/ExplanationToggle';
+import { explanations } from '../lib/explanations';
+import SeasonalTabs from '../components/seasonal/SeasonalTabs';
+import SatisfactionChart from '../components/charts/SatisfactionChart';
+import AbsoluteScoreChart from '../components/charts/AbsoluteScoreChart';
+import OutlierChart from '../components/charts/OutlierChart';
+import { CategoryAnalysisResponse } from '../types';
 
-import { FaSpinner, FaChartBar, FaStar, FaBrain, FaChartLine, FaChartPie, FaBoxOpen, FaCloud } from 'react-icons/fa'
+import { FaChartBar, FaStar, FaBrain, FaChartLine, FaChartPie, FaBoxOpen, FaCloud } from 'react-icons/fa';
+
+// 로딩 컴포넌트
+function AnalysisProgress({ progress, title }: { progress: ProgressEvent; title: string }) {
+  const percent = Math.round(progress.percent * 100);
+  return (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <div className="text-center w-full max-w-2xl p-8">
+        <h2 className="text-2xl font-bold text-primary mb-4">{title}</h2>
+        <div className="w-full bg-gray-200 rounded-full h-4 mb-4 overflow-hidden">
+          <div
+            className="bg-primary h-4 rounded-full transition-all duration-300 ease-in-out"
+            style={{ width: `${percent}%` }}
+          ></div>
+        </div>
+        <p className="text-xl font-semibold text-gray-700 mb-2">{percent}%</p>
+        <p className="text-md text-gray-500 whitespace-pre-wrap">{progress.message}</p>
+      </div>
+    </div>
+  );
+}
 
 export default function CategoryAnalysisPage() {
-  const [searchParams] = useSearchParams()
-  const cat1 = searchParams.get('cat1') || ''
-  const cat2 = searchParams.get('cat2') || ''
-  const cat3 = searchParams.get('cat3') || ''
-  const numReviews = Number(searchParams.get('reviews')) || 10
-  const navigate = useNavigate()
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const cat1 = searchParams.get('cat1') || '';
+  const cat2 = searchParams.get('cat2') || '';
+  const cat3 = searchParams.get('cat3') || '';
+  const numReviews = Number(searchParams.get('reviews')) || 10;
+
+  // Analysis state
+  const [data, setData] = useState<CategoryAnalysisResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ProgressEvent>({ percent: 0, message: '대기 중...' });
 
   // AI 추천 분석 상태
-  const [region, setRegion] = useState('')
-  const [season, setSeason] = useState('')
-  const [enableRecommendation, setEnableRecommendation] = useState(false)
+  const [region, setRegion] = useState('');
+  const [season, setSeason] = useState('');
+  const [enableRecommendation, setEnableRecommendation] = useState(false);
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['category-analysis', cat1, cat2, cat3, numReviews],
-    queryFn: () => analyzeCategory(cat1, cat2, cat3, numReviews),
-    enabled: !!cat1 && !!cat2 && !!cat3,
-    refetchOnMount: true,
-  })
+  useEffect(() => {
+    if (cat1 && cat2 && cat3) {
+      setIsLoading(true);
+      setData(null);
+      setError(null);
+      setProgress({ percent: 0, message: '분석 시작...' });
+
+      analyzeCategoryStream(
+        cat1, cat2, cat3, numReviews,
+        (p) => setProgress(p),
+        (res) => {
+          setData(res);
+          setIsLoading(false);
+        },
+        (err) => {
+          setError(err);
+          setIsLoading(false);
+        }
+      );
+    }
+  }, [cat1, cat2, cat3, numReviews]);
 
   const { data: recommendationData, isLoading: isRecommendationLoading, error: recommendationError } = useQuery({
     queryKey: ['category-recommendation', cat1, cat2, cat3, numReviews, region, season],
     queryFn: () => getRecommendationForCategory(cat1, cat2, cat3, numReviews, region, season),
     enabled: enableRecommendation && !!cat1 && !!cat2 && !!cat3 && !!region && !!season,
-  })
+  });
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <FaSpinner className="animate-spin text-6xl text-primary mx-auto mb-4" />
-          <p className="text-xl text-gray-600">
-            카테고리 분석 중...
-            <br />
-            <span className="text-sm">
-              {cat1} &gt; {cat2} &gt; {cat3}
-              <br />
-              여러 축제를 동시에 분석합니다 (5-10분 소요 가능)
-            </span>
-          </p>
-        </div>
-      </div>
-    )
+    return <AnalysisProgress progress={progress} title={`${cat1} > ${cat2} > ${cat3}`} />;
   }
 
   if (error) {
     return (
       <div className="bg-red-50 border border-red-200 rounded-lg p-6">
         <h2 className="text-xl font-bold text-red-800 mb-2">분석 실패</h2>
-        <p className="text-red-600">{(error as Error).message}</p>
+        <p className="text-red-600">{error}</p>
       </div>
-    )
+    );
   }
 
-  if (!data) return null
+  if (!data) return null;
 
   return (
     <div className="space-y-8">
@@ -510,28 +538,28 @@ export default function CategoryAnalysisPage() {
         )}
       </div>
     </div>
-  )
+  );
 }
 
 // 블로그 내용 기반 계절별 키워드 워드클라우드 컴포넌트
 function BlogKeywordWordclouds({ keywordWordclouds }: { keywordWordclouds: Record<string, string | null> }) {
-  const [activeSeason, setActiveSeason] = useState('봄')
+  const [activeSeason, setActiveSeason] = useState('봄');
 
   const seasons = [
     { name: '봄', activeClass: 'bg-pink-500 text-white shadow-lg', hoverClass: 'bg-gray-100 text-gray-700 hover:bg-pink-100', icon: '🌸' },
     { name: '여름', activeClass: 'bg-green-500 text-white shadow-lg', hoverClass: 'bg-gray-100 text-gray-700 hover:bg-green-100', icon: '🌻' },
     { name: '가을', activeClass: 'bg-orange-500 text-white shadow-lg', hoverClass: 'bg-gray-100 text-gray-700 hover:bg-orange-100', icon: '🍂' },
     { name: '겨울', activeClass: 'bg-blue-500 text-white shadow-lg', hoverClass: 'bg-gray-100 text-gray-700 hover:bg-blue-100', icon: '❄️' }
-  ]
+  ];
 
   // 유효한 계절 필터링 (워드클라우드가 있는 계절만)
-  const validSeasons = seasons.filter(season => keywordWordclouds[season.name])
+  const validSeasons = seasons.filter(season => keywordWordclouds[season.name]);
 
-  if (validSeasons.length === 0) return null
+  if (validSeasons.length === 0) return null;
 
   // 기본 활성 계절 설정
   if (!keywordWordclouds[activeSeason] && validSeasons.length > 0) {
-    setActiveSeason(validSeasons[0].name)
+    setActiveSeason(validSeasons[0].name);
   }
 
   return (
@@ -583,5 +611,5 @@ function BlogKeywordWordclouds({ keywordWordclouds }: { keywordWordclouds: Recor
         )}
       </div>
     </div>
-  )
+  );
 }

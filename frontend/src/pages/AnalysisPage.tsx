@@ -1,57 +1,94 @@
-import { useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { analyzeKeyword, getRecommendationForSingle } from '../lib/api'
-import SatisfactionChart from '../components/charts/SatisfactionChart'
-import OutlierChart from '../components/charts/OutlierChart'
-import AbsoluteScoreChart from '../components/charts/AbsoluteScoreChart'
-import DonutChart from '../components/charts/DonutChart'
-import SeasonalTabs from '../components/seasonal/SeasonalTabs'
-import BlogTable from '../components/BlogTable'
-import LoadingSpinner from '../components/LoadingSpinner'
-import ErrorDisplay from '../components/ErrorDisplay'
-import ReactMarkdown from 'react-markdown'
-import ExplanationToggle from '../components/common/ExplanationToggle' // Import ExplanationToggle
-import { explanations } from '../lib/explanations' // Import explanations
+import { useState, useEffect } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { analyzeKeywordStream, getRecommendationForSingle, ProgressEvent } from '../lib/api';
+import { KeywordAnalysisResponse } from '../types';
+import SatisfactionChart from '../components/charts/SatisfactionChart';
+import OutlierChart from '../components/charts/OutlierChart';
+import AbsoluteScoreChart from '../components/charts/AbsoluteScoreChart';
+import DonutChart from '../components/charts/DonutChart';
+import SeasonalTabs from '../components/seasonal/SeasonalTabs';
+import BlogTable from '../components/BlogTable';
+import ErrorDisplay from '../components/ErrorDisplay';
+import ReactMarkdown from 'react-markdown';
+import ExplanationToggle from '../components/common/ExplanationToggle';
+import { explanations } from '../lib/explanations';
+
+// 로딩 컴포넌트
+function AnalysisProgress({ progress, title }: { progress: ProgressEvent; title: string }) {
+  const percent = Math.round(progress.percent * 100);
+  return (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <div className="text-center w-full max-w-2xl p-8">
+        <h2 className="text-2xl font-bold text-primary mb-4">{title}</h2>
+        <div className="w-full bg-gray-200 rounded-full h-4 mb-4 overflow-hidden">
+          <div
+            className="bg-primary h-4 rounded-full transition-all duration-300 ease-in-out"
+            style={{ width: `${percent}%` }}
+          ></div>
+        </div>
+        <p className="text-xl font-semibold text-gray-700 mb-2">{percent}%</p>
+        <p className="text-md text-gray-500 whitespace-pre-wrap">{progress.message}</p>
+      </div>
+    </div>
+  );
+}
 
 export default function AnalysisPage() {
-  const { keyword: encodedKeyword } = useParams<{ keyword: string }>()
-  const keyword = encodedKeyword ? decodeURIComponent(encodedKeyword) : ''
-  const [searchParams] = useSearchParams()
-  const numReviews = Number(searchParams.get('reviews')) || 10
+  const { keyword: encodedKeyword } = useParams<{ keyword: string }>();
+  const keyword = encodedKeyword ? decodeURIComponent(encodedKeyword) : '';
+  const [searchParams] = useSearchParams();
+  const numReviews = Number(searchParams.get('reviews')) || 10;
+
+  // Analysis state
+  const [data, setData] = useState<KeywordAnalysisResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ProgressEvent>({ percent: 0, message: '대기 중...' });
 
   // AI 추천 분석 상태
-  const [region, setRegion] = useState('')
-  const [season, setSeason] = useState('')
-  const [enableRecommendation, setEnableRecommendation] = useState(false)
+  const [region, setRegion] = useState('');
+  const [season, setSeason] = useState('');
+  const [enableRecommendation, setEnableRecommendation] = useState(false);
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['analysis', keyword, numReviews],
-    queryFn: () => analyzeKeyword(keyword, numReviews),
-    enabled: !!keyword,
-    refetchOnMount: true,
-  })
+  useEffect(() => {
+    if (keyword) {
+      setIsLoading(true);
+      setData(null);
+      setError(null);
+      setProgress({ percent: 0, message: '분석 시작...' });
+
+      analyzeKeywordStream(
+        keyword,
+        numReviews,
+        (p) => setProgress(p),
+        (res) => {
+          setData(res);
+          setIsLoading(false);
+        },
+        (err) => {
+          setError(err);
+          setIsLoading(false);
+        }
+      );
+    }
+  }, [keyword, numReviews]);
 
   const { data: recommendationData, isLoading: isRecommendationLoading, error: recommendationError } = useQuery({
     queryKey: ['recommendation', keyword, numReviews, region, season],
     queryFn: () => getRecommendationForSingle(keyword, numReviews, region, season),
     enabled: enableRecommendation && !!region && !!season,
-  })
+  });
 
   if (isLoading) {
-    return (
-      <LoadingSpinner
-        message={`${keyword} 분석 중...`}
-        subtitle="네이버 블로그 크롤링 및 AI 감성 분석 진행 중 (최대 2-3분 소요)"
-      />
-    )
+    return <AnalysisProgress progress={progress} title={`${keyword} 분석 중...`} />;
   }
 
   if (error) {
-    return <ErrorDisplay message={(error as Error).message} />
+    return <ErrorDisplay message={error} />;
   }
 
-  if (!data) return null
+  if (!data) return null;
 
   return (
     <div className="space-y-8">
@@ -478,5 +515,5 @@ export default function AnalysisPage() {
         )}
       </div>
     </div>
-  )
+  );
 }

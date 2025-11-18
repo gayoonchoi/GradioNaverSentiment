@@ -8,6 +8,8 @@ import type {
   RecommendationResponse,
 } from '../types';
 
+export const SERVER_URL = 'http://localhost:8001';
+
 const api = axios.create({
   baseURL: '/api',
   headers: {
@@ -216,3 +218,152 @@ export const getRecommendationForCategoryComparison = async (
 };
 
 export default api;
+
+// ==================== Streaming API ====================
+
+export interface ProgressEvent {
+  percent: number;
+  message: string;
+}
+
+type ProgressCallback = (progress: ProgressEvent) => void;
+type ResultCallback<T> = (result: T) => void;
+type ErrorCallback = (error: string) => void;
+
+async function fetchStream<T>(
+  url: string,
+  body: any,
+  onProgress: ProgressCallback,
+  onResult: ResultCallback<T>,
+  onError: ErrorCallback
+) {
+  try {
+    const response = await fetch(`/api${url}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body is not readable');
+    }
+
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    const processText = (text: string) => {
+      buffer += text;
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep the last partial line
+
+      for (const line of lines) {
+        if (line.startsWith('data:')) {
+          const jsonString = line.substring(5).trim();
+          if (jsonString) {
+            try {
+              const parsed = JSON.parse(jsonString);
+              if (parsed.type === 'progress') {
+                onProgress(parsed);
+              } else if (parsed.type === 'result') {
+                onResult(parsed.data);
+              } else if (parsed.type === 'error') {
+                onError(parsed.message);
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE message:', jsonString, e);
+              onError('데이터 파싱 중 오류가 발생했습니다.');
+            }
+          }
+        }
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      processText(decoder.decode(value, { stream: true }));
+    }
+  } catch (err) {
+    console.error('Streaming fetch failed:', err);
+    onError((err as Error).message);
+  }
+}
+
+export const analyzeKeywordStream = (
+  keyword: string,
+  numReviews: number,
+  onProgress: ProgressCallback,
+  onResult: ResultCallback<KeywordAnalysisResponse>,
+  onError: ErrorCallback
+) => {
+  fetchStream(
+    '/analyze/keyword/stream',
+    { keyword, num_reviews: numReviews, log_details: true },
+    onProgress,
+    onResult,
+    onError
+  );
+};
+
+export const analyzeCategoryStream = (
+  cat1: string,
+  cat2: string,
+  cat3: string,
+  numReviews: number,
+  onProgress: ProgressCallback,
+  onResult: ResultCallback<CategoryAnalysisResponse>,
+  onError: ErrorCallback
+) => {
+  fetchStream(
+    '/analyze/category/stream',
+    { cat1, cat2, cat3, num_reviews: numReviews },
+    onProgress,
+    onResult,
+    onError
+  );
+};
+
+export const analyzeComparisonStream = (
+  keywordA: string,
+  keywordB: string,
+  numReviews: number,
+  onProgress: ProgressCallback,
+  onResult: ResultCallback<ComparisonResponse>,
+  onError: ErrorCallback
+) => {
+  fetchStream(
+    '/analyze/comparison/stream',
+    { keyword_a: keywordA, keyword_b: keywordB, num_reviews: numReviews },
+    onProgress,
+    onResult,
+    onError
+  );
+};
+
+export const analyzeCategoryComparisonStream = (
+  cat1A: string, cat2A: string, cat3A: string,
+  cat1B: string, cat2B: string, cat3B: string,
+  numReviews: number,
+  onProgress: ProgressCallback,
+  onResult: ResultCallback<CategoryComparisonResponse>,
+  onError: ErrorCallback
+) => {
+  fetchStream(
+    '/analyze/category-comparison/stream',
+    { 
+      cat1_a: cat1A, cat2_a: cat2A, cat3_a: cat3A,
+      cat1_b: cat1B, cat2_b: cat2B, cat3_b: cat3B,
+      num_reviews: numReviews 
+    },
+    onProgress,
+    onResult,
+    onError
+  );
+};
