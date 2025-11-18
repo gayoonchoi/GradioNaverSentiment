@@ -1,4 +1,4 @@
-# 🎪 FestInsight - AI 기반 축제 감성 분석 플랫폼
+# 🎪 FestInsight - AI 기반 축제 감성 분석 플랫폼, 데이터레시피
 
 <div align="center">
 
