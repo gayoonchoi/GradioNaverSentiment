@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
+import functools
 import uvicorn
 import traceback
 import asyncio
@@ -926,7 +927,9 @@ class ProgressCallback:
 async def run_analysis_in_thread(target_func, *args, **kwargs):
     """분석 함수를 별도 스레드에서 실행하고 결과를 반환합니다."""
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, target_func, *args, **kwargs)
+    # Use functools.partial to wrap the function and its arguments
+    p = functools.partial(target_func, *args, **kwargs)
+    return await loop.run_in_executor(None, p)
 
 def format_sse_message(data: dict) -> str:
     """주어진 데이터를 SSE 메시지 형식으로 변환합니다."""

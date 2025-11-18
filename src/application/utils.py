@@ -152,6 +152,75 @@ def load_raw_cached_analysis(keyword: str, num_reviews: int) -> dict:
         traceback.print_exc()
         return None
 
+def get_category_cache_key(cat1: str, cat2: str, cat3: str, num_reviews: int) -> str:
+    """카테고리 분석을 위한 캐시 키 생성"""
+    key_str = f"category_{cat1}_{cat2}_{cat3}_{num_reviews}"
+    return hashlib.md5(key_str.encode('utf-8')).hexdigest()
+
+def load_category_cached_analysis(cat1: str, cat2: str, cat3: str, num_reviews: int) -> dict:
+    """캐시된 카테고리 분석 결과 로드"""
+    try:
+        cache_key = get_category_cache_key(cat1, cat2, cat3, num_reviews) + "_category_raw"
+        cache_path = get_cache_path(cache_key)
+
+        if not is_cache_valid(cache_path):
+            return None
+
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            cached_data = json.load(f)
+
+            # DataFrame과 datetime 복원
+            restored_results = {}
+            for key, value in cached_data.items():
+                if isinstance(value, dict) and value.get('_type') == 'DataFrame':
+                    restored_results[key] = pd.DataFrame(value['data'], columns=value['columns'])
+                elif isinstance(value, dict) and value.get('_type') == 'datetime':
+                    restored_results[key] = datetime.fromisoformat(value['value']) if value['value'] else None
+                else:
+                    restored_results[key] = value
+
+            print(f"✅ 캐시된 카테고리 분석 결과 사용: {cat1}>{cat2}>{cat3} (num_reviews={num_reviews})")
+            return restored_results
+    except Exception as e:
+        print(f"⚠️ 카테고리 캐시 로드 실패: {e}")
+        traceback.print_exc()
+        return None
+
+def save_category_analysis_to_cache(cat1: str, cat2: str, cat3: str, num_reviews: int, results: dict) -> None:
+    """카테고리 분석 결과를 캐시에 저장"""
+    try:
+        cache_key = get_category_cache_key(cat1, cat2, cat3, num_reviews) + "_category_raw"
+        cache_path = get_cache_path(cache_key)
+
+        cacheable_results = {}
+        for key, value in results.items():
+            if isinstance(value, pd.DataFrame):
+                df_copy = value.copy()
+                for col in df_copy.columns:
+                    if pd.api.types.is_datetime64_any_dtype(df_copy[col]):
+                        df_copy[col] = df_copy[col].apply(lambda x: x.isoformat() if pd.notnull(x) else None)
+                
+                cacheable_results[key] = {
+                    '_type': 'DataFrame',
+                    'data': df_copy.to_dict('records'),
+                    'columns': list(df_copy.columns)
+                }
+            elif isinstance(value, (datetime, pd.Timestamp)):
+                cacheable_results[key] = {
+                    '_type': 'datetime',
+                    'value': value.isoformat() if value else None
+                }
+            elif isinstance(value, (dict, list, str, int, float, bool, type(None))):
+                cacheable_results[key] = value
+            else:
+                cacheable_results[key] = str(value)
+
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            json.dump(cacheable_results, f, ensure_ascii=False, indent=2)
+            print(f"💾 카테고리 분석 결과 캐시 저장: {cat1}>{cat2}>{cat3} (num_reviews={num_reviews})")
+    except Exception as e:
+        print(f"⚠️ 카테고리 캐시 저장 실패 (분석은 계속 진행됨): {e}")
+
 def change_page(full_df, page_num):
     if not isinstance(full_df, pd.DataFrame) or full_df.empty:
         return pd.DataFrame(), 1, "/ 1"
@@ -687,6 +756,7 @@ def generate_recommendation_analysis(analysis_result: dict, region: str, season:
 
         5. **예상 리스크 및 대응 방안**
            - 불만 사항 분석을 바탕으로 예상되는 문제점과 사전 대응 방안을 제시하세요.
+           - 이 섹션은 반드시 3열 마크다운 테이블 형식으로 작성해주세요. 첫 번째 열은 '예상 리스크', 두 번째 열은 '상세 내용', 세 번째 열은 '대응 방안'으로 하고, 반드시 헤더 아래에 구분선 `| :--- | :--- | :--- |`을 포함해주세요.
 
         결과는 방문객 관점에서 실용적이고 구체적으로 작성해주세요.
         """

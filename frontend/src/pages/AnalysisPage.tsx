@@ -11,6 +11,8 @@ import SeasonalTabs from '../components/seasonal/SeasonalTabs';
 import BlogTable from '../components/BlogTable';
 import ErrorDisplay from '../components/ErrorDisplay';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw'; // <--- 1. rehype-raw 임포트
 import ExplanationToggle from '../components/common/ExplanationToggle';
 import { explanations } from '../lib/explanations';
 
@@ -73,6 +75,10 @@ export default function AnalysisPage() {
       );
     }
   }, [keyword, numReviews]);
+
+  useEffect(() => {
+    setEnableRecommendation(false);
+  }, [region, season]);
 
   const { data: recommendationData, isLoading: isRecommendationLoading, error: recommendationError } = useQuery({
     queryKey: ['recommendation', keyword, numReviews, region, season],
@@ -245,7 +251,8 @@ export default function AnalysisPage() {
                 font-weight: 600;
               }
             `}} />
-            <ReactMarkdown>{data.overall_summary}</ReactMarkdown>
+            {/* <--- 2. 플러그인 적용 */}
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{data.overall_summary}</ReactMarkdown>
           </div>
         </div>
       )}
@@ -257,7 +264,8 @@ export default function AnalysisPage() {
             🤖 AI 분석 해석
           </h2>
           <div className="prose max-w-none">
-            <ReactMarkdown>{data.distribution_interpretation}</ReactMarkdown>
+            {/* <--- 3. 플러그인 적용 */}
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{data.distribution_interpretation}</ReactMarkdown>
           </div>
         </div>
       )}
@@ -323,7 +331,8 @@ export default function AnalysisPage() {
                 font-weight: 600;
               }
             `}} />
-            <ReactMarkdown>{data.negative_summary}</ReactMarkdown>
+            {/* <--- 4. 플러그인 적용 */}
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{data.negative_summary}</ReactMarkdown>
           </div>
         </div>
       )}
@@ -508,10 +517,10 @@ export default function AnalysisPage() {
                 {recommendationData.season}
               </span>
             </div>
-            <div className="prose prose-lg max-w-none">
-              <ReactMarkdown>{recommendationData.recommendation}</ReactMarkdown>
-            </div>
-          </div>
+                          <div className="prose prose-lg max-w-none">
+                            {/* <--- 5. 플러그인 적용 */}
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{recommendationData.recommendation}</ReactMarkdown>
+                          </div>          </div>
         )}
       </div>
     </div>

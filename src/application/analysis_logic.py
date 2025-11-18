@@ -10,7 +10,12 @@ matplotlib.use('Agg') # For non-GUI environments
 import matplotlib.pyplot as plt
 import uuid
 from ..data import festival_loader
-from .utils import get_season, summarize_negative_feedback, calculate_trend_metrics, generate_overall_summary, load_cached_analysis, save_analysis_to_cache, load_raw_cached_analysis, save_raw_analysis_to_cache
+from .utils import (
+    get_season, summarize_negative_feedback, calculate_trend_metrics,
+    generate_overall_summary, load_cached_analysis, save_analysis_to_cache,
+    load_raw_cached_analysis, save_raw_analysis_to_cache,
+    load_category_cached_analysis, save_category_analysis_to_cache
+)
 from ..application.graph import app_llm_graph
 from ..infrastructure.web.naver_api import search_naver_blog_page
 from ..infrastructure.web.scraper import scrape_blog_content
@@ -645,6 +650,18 @@ def perform_festival_group_analysis(festivals_to_analyze: list, group_name: str,
 
 # 기존 함수는 새로 만든 그룹 분석 함수를 호출하는 래퍼(wrapper)가 됨
 def perform_category_analysis(cat1, cat2, cat3, num_reviews, driver, log_details, progress: gr.Progress, initial_progress, total_steps):
-    festivals_to_analyze = festival_loader.get_festivals(cat1, cat2, cat3)
     category_name = cat3 or cat2 or cat1
-    return perform_festival_group_analysis(festivals_to_analyze, category_name, num_reviews, driver, log_details, progress, initial_progress, total_steps)
+
+    # 1. 캐시 확인
+    cached_result = load_category_cached_analysis(cat1, cat2, cat3, num_reviews)
+    if cached_result:
+        return cached_result
+
+    festivals_to_analyze = festival_loader.get_festivals(cat1, cat2, cat3)
+    results = perform_festival_group_analysis(festivals_to_analyze, category_name, num_reviews, driver, log_details, progress, initial_progress, total_steps)
+    
+    # 2. 캐시 저장
+    if "error" not in results:
+        save_category_analysis_to_cache(cat1, cat2, cat3, num_reviews, results)
+    
+    return results

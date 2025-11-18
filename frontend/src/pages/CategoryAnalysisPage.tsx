@@ -11,6 +11,8 @@ import SatisfactionChart from '../components/charts/SatisfactionChart';
 import AbsoluteScoreChart from '../components/charts/AbsoluteScoreChart';
 import OutlierChart from '../components/charts/OutlierChart';
 import { CategoryAnalysisResponse } from '../types';
+import remarkGfm from 'remark-gfm'; // <--- 1. remarkGfm 임포트
+import rehypeRaw from 'rehype-raw'; // <--- 2. rehypeRaw 임포트
 
 import { FaChartBar, FaStar, FaBrain, FaChartLine, FaChartPie, FaBoxOpen, FaCloud } from 'react-icons/fa';
 
@@ -145,7 +147,8 @@ export default function CategoryAnalysisPage() {
                 font-weight: 600;
               }
             `}} />
-            <ReactMarkdown>{data.category_overall_summary}</ReactMarkdown>
+            {/* <--- 3. 플러그인 적용 */}
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{data.category_overall_summary}</ReactMarkdown>
           </div>
         </div>
       )}
@@ -187,7 +190,8 @@ export default function CategoryAnalysisPage() {
                 line-height: 1.8;
               }
             `}} />
-            <ReactMarkdown>{data.category_negative_summary}</ReactMarkdown>
+            {/* <--- 4. 플러그인 적용 */}
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{data.category_negative_summary}</ReactMarkdown>
           </div>
         </div>
       )}
@@ -228,7 +232,8 @@ export default function CategoryAnalysisPage() {
                 line-height: 1.7;
               }
             `}} />
-            <ReactMarkdown>{data.distribution_interpretation}</ReactMarkdown>
+            {/* <--- 5. 플러그인 적용 */}
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{data.distribution_interpretation}</ReactMarkdown>
           </div>
         </div>
       )}
@@ -445,7 +450,8 @@ export default function CategoryAnalysisPage() {
                           line-height: 1.6;
                         }
                       `}} />
-                      <ReactMarkdown>{festival['주요 불만 사항 요약']}</ReactMarkdown>
+                      {/* <--- 6. 플러그인 적용 */}
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{festival['주요 불만 사항 요약']}</ReactMarkdown>
                     </div>
                   </div>
                 )}
@@ -532,7 +538,8 @@ export default function CategoryAnalysisPage() {
               </span>
             </div>
             <div className="prose prose-lg max-w-none">
-              <ReactMarkdown>{recommendationData.recommendation}</ReactMarkdown>
+              {/* <--- 7. 플러그인 적용 */}
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{recommendationData.recommendation}</ReactMarkdown>
             </div>
           </div>
         )}

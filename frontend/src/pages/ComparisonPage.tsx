@@ -1,4 +1,4 @@
-import { useState, FC } from 'react';
+import { useState, FC, useEffect } from 'react'; // <--- 1. useEffect 임포트 수정
 import { useQuery } from '@tanstack/react-query';
 import {
   analyzeComparisonStream,
@@ -19,6 +19,8 @@ import SeasonalTabs from '../components/seasonal/SeasonalTabs';
 import BlogTable from '../components/BlogTable';
 import { FaBalanceScale } from 'react-icons/fa';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw'; // <--- 2. rehypeRaw 임포트
 import { SERVER_URL } from '../lib/api';
 
 // 로딩 컴포넌트
@@ -52,19 +54,16 @@ const Section: FC<{ title: string; children: React.ReactNode; className?: string
 const KeywordAnalysisDetails: FC<{ result: KeywordAnalysisResponse }> = ({ result }) => {
   return (
     <div className="space-y-6">
-      <Section title="총합 평가">
-        <div className="prose max-w-none">
-          <ReactMarkdown>{result.overall_summary}</ReactMarkdown>
-        </div>
-      </Section>
       <Section title="AI 분석 해석">
         <div className="prose max-w-none">
-          <ReactMarkdown>{result.distribution_interpretation}</ReactMarkdown>
+          {/* <--- 3. 플러그인 적용 */}
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{result.distribution_interpretation}</ReactMarkdown>
         </div>
       </Section>
       <Section title="주요 불만 사항">
         <div className="prose max-w-none">
-          <ReactMarkdown>{result.negative_summary}</ReactMarkdown>
+          {/* <--- 4. 플러그인 적용 */}
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{result.negative_summary}</ReactMarkdown>
         </div>
       </Section>
       <Section title="전체 긍정/부정 비율">
@@ -101,17 +100,20 @@ const CategoryAnalysisDetails: FC<{ result: CategoryAnalysisResponse }> = ({ res
     <div className="space-y-6">
       <Section title="총합 평가">
         <div className="prose max-w-none">
-          <ReactMarkdown>{result.category_overall_summary}</ReactMarkdown>
+          {/* <--- 5. 플러그인 적용 */}
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{result.category_overall_summary}</ReactMarkdown>
         </div>
       </Section>
       <Section title="AI 분석 해석">
         <div className="prose max-w-none">
-          <ReactMarkdown>{result.distribution_interpretation}</ReactMarkdown>
+          {/* <--- 6. 플러그인 적용 */}
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{result.distribution_interpretation}</ReactMarkdown>
         </div>
       </Section>
       <Section title="주요 불만 사항">
         <div className="prose max-w-none">
-          <ReactMarkdown>{result.category_negative_summary}</ReactMarkdown>
+          {/* <--- 7. 플러그인 적용 */}
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{result.category_negative_summary}</ReactMarkdown>
         </div>
       </Section>
       <Section title="전체 긍정/부정 비율">
@@ -193,6 +195,10 @@ function FestivalComparison() {
   const [region, setRegion] = useState('');
   const [season, setSeason] = useState('');
   const [enableRecommendation, setEnableRecommendation] = useState(false);
+
+  useEffect(() => {
+    setEnableRecommendation(false);
+  }, [region, season, keywordA, keywordB]);
 
   const { data: recommendationData, isLoading: isRecommendationLoading, error: recommendationError } = useQuery({
     queryKey: ['comparison-recommendation', keywordA, keywordB, numReviews, region, season],
@@ -302,8 +308,34 @@ function FestivalComparison() {
           {data.comparison_summary && (
             <div className="bg-white rounded-xl shadow-md p-6">
               <h3 className="text-2xl font-bold mb-4">AI 비교 분석 요약</h3>
-              <div className="prose max-w-none">
-                <ReactMarkdown>{data.comparison_summary}</ReactMarkdown>
+              <div className="prose prose-lg max-w-none leading-relaxed">
+                <style dangerouslySetInnerHTML={{__html: `
+                  .prose h1, .prose h2, .prose h3, .prose h4 {
+                    margin-top: 1.5em;
+                    margin-bottom: 0.75em;
+                    font-weight: 700;
+                  }
+                  .prose p {
+                    margin-top: 0.75em;
+                    margin-bottom: 0.75em;
+                    line-height: 1.8;
+                  }
+                  .prose ol, .prose ul {
+                    margin-top: 1em;
+                    margin-bottom: 1em;
+                  }
+                  .prose li {
+                    margin-top: 0.5em;
+                    margin-bottom: 0.5em;
+                    line-height: 1.7;
+                  }
+                  .prose strong {
+                    color: #1e40af;
+                    font-weight: 600;
+                  }
+                `}} />
+                {/* <--- 8. 플러그인 적용 */}
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{data.comparison_summary}</ReactMarkdown>
               </div>
             </div>
           )}
@@ -397,7 +429,33 @@ function FestivalComparison() {
                 </span>
               </div>
               <div className="prose prose-lg max-w-none">
-                <ReactMarkdown>{recommendationData.recommendation}</ReactMarkdown>
+                <style dangerouslySetInnerHTML={{__html: `
+                  .prose h1, .prose h2, .prose h3, .prose h4 {
+                    margin-top: 1.5em;
+                    margin-bottom: 0.75em;
+                    font-weight: 700;
+                  }
+                  .prose p {
+                    margin-top: 0.75em;
+                    margin-bottom: 0.75em;
+                    line-height: 1.8;
+                  }
+                  .prose ol, .prose ul {
+                    margin-top: 1em;
+                    margin-bottom: 1em;
+                  }
+                  .prose li {
+                    margin-top: 0.5em;
+                    margin-bottom: 0.5em;
+                    line-height: 1.7;
+                  }
+                  .prose strong {
+                    color: #1e40af;
+                    font-weight: 600;
+                  }
+                `}} />
+                {/* <--- 9. 플러그인 적용 */}
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{recommendationData.recommendation}</ReactMarkdown>
               </div>
             </div>
           )}
@@ -431,6 +489,10 @@ function CategoryComparison() {
   const [region, setRegion] = useState('');
   const [season, setSeason] = useState('');
   const [enableRecommendation, setEnableRecommendation] = useState(false);
+
+  useEffect(() => {
+    setEnableRecommendation(false);
+  }, [region, season, cat1A, cat2A, cat3A, cat1B, cat2B, cat3B]);
 
   // 카테고리 데이터 로드
   const { data: cat1List } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
@@ -605,7 +667,8 @@ function CategoryComparison() {
             <div className="bg-white rounded-xl shadow-md p-6">
               <h3 className="text-2xl font-bold mb-4">AI 비교 분석 요약</h3>
               <div className="prose max-w-none">
-                <ReactMarkdown>{data.comparison_summary}</ReactMarkdown>
+                {/* <--- 10. 플러그인 적용 */}
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{data.comparison_summary}</ReactMarkdown>
               </div>
             </div>
           )}
@@ -699,7 +762,33 @@ function CategoryComparison() {
                 </span>
               </div>
               <div className="prose prose-lg max-w-none">
-                <ReactMarkdown>{recommendationData.recommendation}</ReactMarkdown>
+                <style dangerouslySetInnerHTML={{__html: `
+                  .prose h1, .prose h2, .prose h3, .prose h4 {
+                    margin-top: 1.5em;
+                    margin-bottom: 0.75em;
+                    font-weight: 700;
+                  }
+                  .prose p {
+                    margin-top: 0.75em;
+                    margin-bottom: 0.75em;
+                    line-height: 1.8;
+                  }
+                  .prose ol, .prose ul {
+                    margin-top: 1em;
+                    margin-bottom: 1em;
+                  }
+                  .prose li {
+                    margin-top: 0.5em;
+                    margin-bottom: 0.5em;
+                    line-height: 1.7;
+                  }
+                  .prose strong {
+                    color: #1e40af;
+                    font-weight: 600;
+                  }
+                `}} />
+                {/* <--- 11. 플러그인 적용 */}
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{recommendationData.recommendation}</ReactMarkdown>
               </div>
             </div>
           )}
